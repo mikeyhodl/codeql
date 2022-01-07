@@ -572,6 +572,12 @@ end
 # 86 take
 # 87 take_while
 # 88 tally
-# 89 to_a
+
+def m89
+    a = [0, 1, 2, source(89)]
+    b = a.to_a
+    sink(b[3]) # $ hasValueFlow=89
+end
+
 # 90 uniq
 # 91 zip

@@ -1430,16 +1430,6 @@ module Enumerable {
     }
   }
 
-  private class EntriesSummary extends SimpleSummarizedCallable {
-    EntriesSummary() { this = "entries" }
-
-    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-      input = "Receiver" and
-      output = "ReturnValue" and
-      preservesValue = true
-    }
-  }
-
   private class FilterMapSummary extends SimpleSummarizedCallable {
     FilterMapSummary() { this = "filter_map" }
 
@@ -1564,6 +1554,17 @@ module Enumerable {
     override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
       input = "ArrayElement of Receiver" and
       output = ["Parameter[0] of BlockArgument", "ArrayElement[?] of ReturnValue"] and
+      preservesValue = true
+    }
+  }
+
+  private class ToASummary extends SimpleSummarizedCallable {
+    // `entries` is an alias of `to_a`.
+    ToASummary() { this = ["to_a", "entries"] }
+
+    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+      input = "Receiver" and
+      output = "ReturnValue" and
       preservesValue = true
     }
   }
