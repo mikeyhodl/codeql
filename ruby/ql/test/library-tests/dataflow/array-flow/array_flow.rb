@@ -178,255 +178,255 @@ def m21
 end
 
 def m22
-    a = [0, 1, source(22)]
-    a.clear()
-    sink(a[2])
+    a = [0, 1, source(22.1)]
+    b = a.chunk do |x|
+        sink x # $ hasValueFlow=22.1
+        source 22.2
+    end
+    sink(b[0]) # $ hasValueFlow=22.1 $ hasValueFlow=22.2
 end
 
 def m23
-    a = [0, 1, source(23)]
-    b = a.collect do |x|
-        sink x # $ hasValueFlow=23
-        x
+    a = [0, 1, source(23.1), source(23.2)]
+    b = a.chunk_while do |x, y|
+        sink x # $ hasValueFlow=23.1 $ hasValueFlow=23.2
+        sink y # $ hasValueFlow=23.1 $ hasValueFlow=23.2
+        x > y
     end
-    sink(b[0]) # $ hasValueFlow=23
+    sink(b)
 end
 
 def m24
     a = [0, 1, source(24)]
-    b = a.collect_concat do |x|
-        sink x # $ hasValueFlow=24
-        [x, x]
-    end
-    sink(b[0]) # $ hasValueFlow=24
+    a.clear()
+    sink(a[2])
 end
 
 def m25
     a = [0, 1, source(25)]
-    a.combination(1) do |x|
-        sink(x[0]) # $ hasValueFlow=25
+    b = a.collect do |x|
+        sink x # $ hasValueFlow=25
+        x
     end
+    sink(b[0]) # $ hasValueFlow=25
 end
 
 def m26
     a = [0, 1, source(26)]
-    b = a.compact
+    b = a.collect_concat do |x|
+        sink x # $ hasValueFlow=26
+        [x, x]
+    end
     sink(b[0]) # $ hasValueFlow=26
 end
 
 def m27
-    a = [0, 1, source(27.1)]
-    b = [0, 1, source(27.2)]
-    a.concat(b)
-    sink(a[0]) # $ hasValueFlow=27.2
-    sink(a[2]) # $ hasValueFlow=27.1 $ hasValueFlow=27.2
+    a = [0, 1, source(27)]
+    a.combination(1) do |x|
+        sink(x[0]) # $ hasValueFlow=27
+    end
 end
 
 def m28
     a = [0, 1, source(28)]
-    a.count do |x|
-        sink x # $ hasValueFlow=28
-    end
+    b = a.compact
+    sink(b[0]) # $ hasValueFlow=28
 end
 
 def m29
-    a = [0, 1, source(29)]
-    a.cycle(2) do |x|
-        sink x # $ hasValueFlow=29
-    end
+    a = [0, 1, source(29.1)]
+    b = [0, 1, source(29.2)]
+    a.concat(b)
+    sink(a[0]) # $ hasValueFlow=29.2
+    sink(a[2]) # $ hasValueFlow=29.1 $ hasValueFlow=29.2
 end
 
 def m30
-    a = [0, 1, source(30.1)]
-    b = a.delete(2) { source(30.2) }
-    sink b # $ hasValueFlow=30.1 $ hasValueFlow=30.2
+    a = [0, 1, source(30)]
+    a.count do |x|
+        sink x # $ hasValueFlow=30
+    end
 end
 
 def m31
     a = [0, 1, source(31)]
-    b = a.delete_at(2)
-    sink b # $ hasValueFlow=31
+    a.cycle(2) do |x|
+        sink x # $ hasValueFlow=31
+    end
 end
 
 def m32
-    a = [0, 1, source(32)]
-    b = a.delete_if do |x|
-        sink x # $ hasValueFlow=32
-    end
-    sink(b[0]) # $ hasValueFlow=32
+    a = [0, 1, source(32.1)]
+    b = a.delete(2) { source(32.2) }
+    sink b # $ hasValueFlow=32.1 $ hasValueFlow=32.2
 end
 
 def m33
     a = [0, 1, source(33)]
-    b = a.difference([1])
-    sink(b[0]) # $ hasValueFlow=33
+    b = a.delete_at(2)
+    sink b # $ hasValueFlow=33
 end
 
-def m34(i)
-    a = [0, 1, source(34.1), [0, source(34.2)]]
-    sink(a.dig(0))
-    sink(a.dig(2)) # $ hasValueFlow=34.1
-    sink(a.dig(i)) # $ hasValueFlow=34.1
-    sink(a.dig(3,0))
-    sink(a.dig(3,1)) # $ hasValueFlow=34.2
+def m34
+    a = [0, 1, source(34)]
+    b = a.delete_if do |x|
+        sink x # $ hasValueFlow=34
+    end
+    sink(b[0]) # $ hasValueFlow=34
 end
 
 def m35
-    a = [0, 1, source(35.1)]
-    b = a.detect(-> { source(35.2) }) do |x|
-        sink x # $ hasValueFlow=35.1
-    end
-    sink b # $ hasValueFlow=35.1 $ hasValueFlow=35.2
+    a = [0, 1, source(35)]
+    b = a.difference([1])
+    sink(b[0]) # $ hasValueFlow=35
 end
 
 def m36(i)
-    a = [0, 1, source(36.1), source(36.2)]
-    b = a.drop(i)
-    sink(b[0]) # $ hasValueFlow=36.1 # $ hasValueFlow=36.2
-    b = a.drop(1)
-    sink(b[0])
-    sink(b[1]) # $ hasValueFlow=36.1
-    sink(b[i]) # $ hasValueFlow=36.1 # $ hasValueFlow=36.2
-    a[i] = source(36.3)
-    b = a.drop(1)
-    sink(b[1]) # $ hasValueFlow=36.1 # $ hasValueFlow=36.3
-    c = b.drop(100)
-    sink(c[1]) # $ hasValueFlow=36.3
+    a = [0, 1, source(36.1), [0, source(36.2)]]
+    sink(a.dig(0))
+    sink(a.dig(2)) # $ hasValueFlow=36.1
+    sink(a.dig(i)) # $ hasValueFlow=36.1
+    sink(a.dig(3,0))
+    sink(a.dig(3,1)) # $ hasValueFlow=36.2
 end
 
 def m37
-    a = [0, 1, source(37.1), source(37.2)]
-    b = a.drop_while do |x|
-        sink x # $ hasValueFlow=37.1 # $ hasValueFlow=37.2
+    a = [0, 1, source(37.1)]
+    b = a.detect(-> { source(37.2) }) do |x|
+        sink x # $ hasValueFlow=37.1
     end
-    sink(b[0]) # $ hasValueFlow=37.1 # $ hasValueFlow=37.2
+    sink b # $ hasValueFlow=37.1 $ hasValueFlow=37.2
 end
 
-def m38
-    a = [0, 1, source(38)]
-    b = a.each do |x|
-        sink x # $ hasValueFlow=38
-    end
-    sink(b[2]) # $ hasValueFlow=38
+def m38(i)
+    a = [0, 1, source(38.1), source(38.2)]
+    b = a.drop(i)
+    sink(b[0]) # $ hasValueFlow=38.1 # $ hasValueFlow=38.2
+    b = a.drop(1)
+    sink(b[0])
+    sink(b[1]) # $ hasValueFlow=38.1
+    sink(b[i]) # $ hasValueFlow=38.1 # $ hasValueFlow=38.2
+    a[i] = source(38.3)
+    b = a.drop(1)
+    sink(b[1]) # $ hasValueFlow=38.1 # $ hasValueFlow=38.3
+    c = b.drop(100)
+    sink(c[1]) # $ hasValueFlow=38.3
 end
 
 def m39
-    a = [0, 1, source(39)]
-    b = for x in a # desugars to an `each` call
-        sink x # $ hasValueFlow=39
+    a = [0, 1, source(39.1), source(39.2)]
+    b = a.drop_while do |x|
+        sink x # $ hasValueFlow=39.1 # $ hasValueFlow=39.2
     end
-    sink x # $ hasValueFlow=39
-    sink(b[2]) # $ hasValueFlow=39
+    sink(b[0]) # $ hasValueFlow=39.1 # $ hasValueFlow=39.2
 end
 
 def m40
     a = [0, 1, source(40)]
-    a.each_cons(2) do |x|
-        sink (x[0]) # $ hasValueFlow=40
+    b = a.each do |x|
+        sink x # $ hasValueFlow=40
     end
+    sink(b[2]) # $ hasValueFlow=40
 end
 
 def m41
     a = [0, 1, source(41)]
-    b = a.each_entry do |x|
+    b = for x in a # desugars to an `each` call
         sink x # $ hasValueFlow=41
     end
+    sink x # $ hasValueFlow=41
     sink(b[2]) # $ hasValueFlow=41
 end
 
 def m42
     a = [0, 1, source(42)]
-    b = a.each_index do |x|
-        sink x
+    a.each_cons(2) do |x|
+        sink (x[0]) # $ hasValueFlow=42
     end
-    sink(b[2]) # $ hasValueFlow=42
 end
 
 def m43
-    a = [0, 1, 2, source(43)]
-    a.each_slice(1) do |x|
-        sink(x[0]) # $ hasValueFlow=43
+    a = [0, 1, source(43)]
+    b = a.each_entry do |x|
+        sink x # $ hasValueFlow=43
     end
+    sink(b[2]) # $ hasValueFlow=43
 end
 
 def m44
-    a = [0, 1, 2, source(44)]
-    b = a.each_with_index do |x,i|
-        sink(x) # $ hasValueFlow=44
-        sink(i)
+    a = [0, 1, source(44)]
+    b = a.each_index do |x|
+        sink x
     end
-    sink(b[3]) # $ hasValueFlow=44
+    sink(b[2]) # $ hasValueFlow=44
 end
 
 def m45
-    a = [0, 1, 2, source(45.1)]
-    b = a.each_with_object(source(45.2)) do |x,a|
-        sink(x) # $ hasValueFlow=45.1
-        sink(a) # $ hasValueFlow=45.2
+    a = [0, 1, 2, source(45)]
+    a.each_slice(1) do |x|
+        sink(x[0]) # $ hasValueFlow=45
     end
-    sink(b) # $ hasValueFlow=45.2
 end
 
-def m46(i)
-    a = [0, 1, 2, source(46.1)]
-    b = a.fetch(source(46.2)) do |x|
-        sink(x) # $ hasValueFlow=46.2
+def m46
+    a = [0, 1, 2, source(46)]
+    b = a.each_with_index do |x,i|
+        sink(x) # $ hasValueFlow=46
+        sink(i)
     end
-    sink(b) # $ hasValueFlow=46.1
+    sink(b[3]) # $ hasValueFlow=46
 end
 
 def m47
     a = [0, 1, 2, source(47.1)]
-    a.fill(source(47.2), 1, 1)
-    sink(a[3]) # $ hasValueFlow=47.1 $ hasValueFlow=47.2
-    a.fill(source(47.3))
-    sink(a[0]) # $ hasValueFlow=47.3
-    a.fill do |i|
-        source(47.4)
+    b = a.each_with_object(source(47.2)) do |x,a|
+        sink(x) # $ hasValueFlow=47.1
+        sink(a) # $ hasValueFlow=47.2
     end
-    sink(a[0]) # $ hasValueFlow=47.4
-    a.fill(2) do |i|
-        source(47.5)
-    end
-    sink(a[0]) # $ hasValueFlow=47.4 $ hasValueFlow=47.5
+    sink(b) # $ hasValueFlow=47.2
 end
 
 def m48
     a = [0, 1, 2, source(48)]
-    b = a.filter do |x|
-        sink(x) # $ hasValueFlow=48
-    end
-    sink(b[0]) # $ hasValueFlow=48
+    b = a.entries
+    sink(b[3]) # $ hasValueFlow=48
 end
 
-def m49
-    a = [0, 1, 2, source(49)]
-    b = a.filter_map do |x|
-        sink(x) # $ hasValueFlow=49
+def m49(i)
+    a = [0, 1, 2, source(49.1)]
+    b = a.fetch(source(49.2)) do |x|
+        sink(x) # $ hasValueFlow=49.2
     end
-    sink(b[0]) # $ hasValueFlow=49
+    sink(b) # $ hasValueFlow=49.1
 end
 
 def m50
-    a = [0, 1, 2, source(50)]
-    b = a.filter! do |x|
-        sink(x) # $ hasValueFlow=50
-        x > 2
+    a = [0, 1, 2, source(50.1)]
+    a.fill(source(50.2), 1, 1)
+    sink(a[3]) # $ hasValueFlow=50.1 $ hasValueFlow=50.2
+    a.fill(source(50.3))
+    sink(a[0]) # $ hasValueFlow=50.3
+    a.fill do |i|
+        source(50.4)
     end
-    sink(b[0]) # $ hasValueFlow=50
+    sink(a[0]) # $ hasValueFlow=50.4
+    a.fill(2) do |i|
+        source(50.5)
+    end
+    sink(a[0]) # $ hasValueFlow=50.4 $ hasValueFlow=50.5
 end
 
 def m51
-    a = [0, 1, 2, source(51.1)]
-    b = a.find(-> { source(51.2) }) do |x|
-        sink(x) # $ hasValueFlow=51.1
+    a = [0, 1, 2, source(51)]
+    b = a.filter do |x|
+        sink(x) # $ hasValueFlow=51
     end
-    sink(b) # $ hasValueFlow=51.1 $ hasValueFlow=51.2
+    sink(b[0]) # $ hasValueFlow=51
 end
 
 def m52
     a = [0, 1, 2, source(52)]
-    b = a.find_all do |x|
+    b = a.filter_map do |x|
         sink(x) # $ hasValueFlow=52
     end
     sink(b[0]) # $ hasValueFlow=52
@@ -434,90 +434,144 @@ end
 
 def m53
     a = [0, 1, 2, source(53)]
-    a.find_index do |x|
+    b = a.filter! do |x|
         sink(x) # $ hasValueFlow=53
+        x > 2
     end
+    sink(b[0]) # $ hasValueFlow=53
 end
 
-def m54(i)
-    a = [source(54.1), 1, 2, source(54.2)]
-    a[i] = source(54.3)
-    sink(a.first) # $ hasValueFlow=54.1 $ hasValueFlow=54.3
-    b = a.first(2)
-    sink(b[0]) # $ hasValueFlow=54.1 $ hasValueFlow=54.3
-    sink(b[4]) # $ hasValueFlow=54.3
-    c = a.first(i)
-    sink(c[0]) # $ hasValueFlow=54.1 $ hasValueFlow=54.3
-    sink(c[3]) # $ hasValueFlow=54.2 $ hasValueFlow=54.3
+def m54
+    a = [0, 1, 2, source(54.1)]
+    b = a.find(-> { source(54.2) }) do |x|
+        sink(x) # $ hasValueFlow=54.1
+    end
+    sink(b) # $ hasValueFlow=54.1 $ hasValueFlow=54.2
 end
 
 def m55
-    a = [0, 1, 2, source(55.1)]
-    b = a.flat_map do |x|
-        sink(x) # $ hasValueFlow=55.1
-        [x, source(55.2)]
+    a = [0, 1, 2, source(55)]
+    b = a.find_all do |x|
+        sink(x) # $ hasValueFlow=55
     end
-    sink(b[0]) # $ hasValueFlow=55.1 $ hasValueFlow=55.2
+    sink(b[0]) # $ hasValueFlow=55
 end
 
 def m56
-    a = [0, 1, [2, source(56)]]
-    b = a.flatten
-    sink(b[0]) # $ hasValueFlow=56
+    a = [0, 1, 2, source(56)]
+    a.find_index do |x|
+        sink(x) # $ hasValueFlow=56
+    end
 end
 
-def m57
-    a = [0, 1, [2, source(57)]]
-    sink(a[2][1]) # $ hasValueFlow=57
-    a.flatten!
-    sink(a[0]) # $ hasValueFlow=57
-    sink(a[2][1]) # $ SPURIOUS: hasValueFlow=57
+def m57(i)
+    a = [source(57.1), 1, 2, source(57.2)]
+    a[i] = source(57.3)
+    sink(a.first) # $ hasValueFlow=57.1 $ hasValueFlow=57.3
+    b = a.first(2)
+    sink(b[0]) # $ hasValueFlow=57.1 $ hasValueFlow=57.3
+    sink(b[4]) # $ hasValueFlow=57.3
+    c = a.first(i)
+    sink(c[0]) # $ hasValueFlow=57.1 $ hasValueFlow=57.3
+    sink(c[3]) # $ hasValueFlow=57.2 $ hasValueFlow=57.3
 end
 
 def m58
     a = [0, 1, 2, source(58.1)]
-    b = a.grep(/.*/)
-    sink(b[0]) # $ hasValueFlow=58.1
-    b = a.grep(/.*/) do |x|
-        sink x # $ hasValueFlow=58.1
-        source(58.2)
+    b = a.flat_map do |x|
+        sink(x) # $ hasValueFlow=58.1
+        [x, source(58.2)]
     end
-    sink(b[0]) # $ hasValueFlow=58.2
+    sink(b[0]) # $ hasValueFlow=58.1 $ hasValueFlow=58.2
 end
 
 def m59
-    a = [0, 1, 2, source(59.1)]
-    b = a.grep_v(/A/)
-    sink(b[0]) # $ hasValueFlow=59.1
-    b = a.grep_v(/A/) do |x|
-        sink x # $ hasValueFlow=59.1
-        source(59.2)
-    end
-    sink(b[0]) # $ hasValueFlow=59.2
+    a = [0, 1, [2, source(59)]]
+    b = a.flatten
+    sink(b[0]) # $ hasValueFlow=59
 end
 
 def m60
-    a = [0, 1, 2, source(60)]
-    a.index do |x|
-        sink x # $ hasValueFlow=60
-    end
+    a = [0, 1, [2, source(60)]]
+    sink(a[2][1]) # $ hasValueFlow=60
+    a.flatten!
+    sink(a[0]) # $ hasValueFlow=60
+    sink(a[2][1]) # $ SPURIOUS: hasValueFlow=60
 end
 
 def m61
     a = [0, 1, 2, source(61.1)]
-    a.replace([source(61.2)])
-    sink(a[0]) # $ hasValueFlow=61.2
+    b = a.grep(/.*/)
+    sink(b[0]) # $ hasValueFlow=61.1
+    b = a.grep(/.*/) do |x|
+        sink x # $ hasValueFlow=61.1
+        source(61.2)
+    end
+    sink(b[0]) # $ hasValueFlow=61.2
 end
 
+def m62
+    a = [0, 1, 2, source(62.1)]
+    b = a.grep_v(/A/)
+    sink(b[0]) # $ hasValueFlow=62.1
+    b = a.grep_v(/A/) do |x|
+        sink x # $ hasValueFlow=62.1
+        source(62.2)
+    end
+    sink(b[0]) # $ hasValueFlow=62.2
+end
 
-# TODO: assign appropriate number when reached in the alphabetical ordering
-def m2600
-    a = [0, 1, source(2600.1)]
-    a.prepend(2, 3, source(2600.2))
+# 63 group_by
+
+def m64
+    a = [0, 1, 2, source(64)]
+    a.index do |x|
+        sink x # $ hasValueFlow=64
+    end
+end
+
+# 64 map
+# 65 max
+# 66 max_by
+# 67 min
+# 68 min_by
+# 69 minmax
+# 70 minmax_by
+# 71 none?
+# 72 one?
+# 73 partition
+# 74 reduce_inject
+# 75 reject
+
+def m76
+    a = [0, 1, 2, source(76.1)]
+    a.replace([source(76.2)])
+    sink(a[0]) # $ hasValueFlow=76.2
+end
+
+# 77 reverse_each
+# 78 select
+# 79 slice_after
+# 80 slice_before
+# 81 slice_when
+# 82 sort
+# 83 sort_by
+
+def m84
+    a = [0, 1, source(84.1)]
+    a.prepend(2, 3, source(84.2))
     sink(a[0])
     sink(a[1])
-    sink(a[2]) # $ hasValueFlow=2600.2
+    sink(a[2]) # $ hasValueFlow=84.2
     sink(a[3])
     sink(a[4])
-    sink(a[5]) # $ hasValueFlow=2600.1
+    sink(a[5]) # $ hasValueFlow=84.1
 end
+
+# 85 sum
+# 86 take
+# 87 take_while
+# 88 tally
+# 89 to_a
+# 90 uniq
+# 91 zip

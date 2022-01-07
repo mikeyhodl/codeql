@@ -1163,7 +1163,7 @@ module Array {
  * Provides flow summaries for the `Enumerable` class.
  *
  * The summaries are ordered (and implemented) based on
- * https://ruby-doc.org/core-2.7.0/Enumerable.html.
+ * https://ruby-doc.org/core-3.1.0/Enumerable.html
  */
 module Enumerable {
   private class AllSummary extends SimpleSummarizedCallable {
@@ -1194,8 +1194,40 @@ module Enumerable {
     }
   }
 
+  private class ChunkSummary extends SimpleSummarizedCallable {
+    ChunkSummary() { this = "chunk" }
+
+    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+      (
+        input = "ArrayElement of Receiver" and
+        output = ["Parameter[0] of BlockArgument", "ArrayElement[?] of ReturnValue"]
+        or
+        input = "ReturnValue of BlockArgument" and
+        output = "ArrayElement[?] of ReturnValue"
+      ) and
+      preservesValue = true
+    }
+  }
+
+  private class ChunkWhileSummary extends SimpleSummarizedCallable {
+    ChunkWhileSummary() { this = "chunk_while" }
+
+    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+      input = "ArrayElement of Receiver" and
+      (
+        output = ["Parameter[0] of BlockArgument", "Parameter[1] of BlockArgument"] and
+        preservesValue = true
+        or
+        output = "ArrayElement[?] of ReturnValue" and preservesValue = false
+      )
+    }
+  }
+
   private class CollectSummary extends SimpleSummarizedCallable {
-    CollectSummary() { this = ["collect", "collect!"] }
+    // `map` is an alias of `collect`.
+    // TODO: handle `map!` and `collect!` in the Array module. They were
+    // previously handled here, but they are not Enumerable methods.
+    CollectSummary() { this = ["collect", "map"] }
 
     override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
       input = "ArrayElement of Receiver" and
@@ -1209,7 +1241,8 @@ module Enumerable {
   }
 
   private class CollectConcatSummary extends SimpleSummarizedCallable {
-    CollectConcatSummary() { this = "collect_concat" }
+    // `flat_map` is an alias of `collect_concat`.
+    CollectConcatSummary() { this = ["collect_concat", "flat_map"] }
 
     override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
       input = "ArrayElement of Receiver" and
@@ -1243,7 +1276,8 @@ module Enumerable {
   }
 
   private class DetectSummary extends SimpleSummarizedCallable {
-    DetectSummary() { this = "detect" }
+    // `find` is an alias of `detect`.
+    DetectSummary() { this = ["detect", "find"] }
 
     override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
       (
@@ -1396,36 +1430,23 @@ module Enumerable {
     }
   }
 
-  private class FilterSummary extends SimpleSummarizedCallable {
-    FilterSummary() { this = ["filter", "filter_map"] }
+  private class EntriesSummary extends SimpleSummarizedCallable {
+    EntriesSummary() { this = "entries" }
+
+    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+      input = "Receiver" and
+      output = "ReturnValue" and
+      preservesValue = true
+    }
+  }
+
+  private class FilterMapSummary extends SimpleSummarizedCallable {
+    FilterMapSummary() { this = "filter_map" }
 
     override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
       input = "ArrayElement of Receiver" and
       output = ["Parameter[0] of BlockArgument", "ArrayElement[?] of ReturnValue"] and
       preservesValue = true
-    }
-  }
-
-  private class FindSummary extends SimpleSummarizedCallable {
-    FindSummary() { this = "find" }
-
-    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-      (
-        input = "ArrayElement of Receiver" and
-        output = ["Parameter[0] of BlockArgument", "ReturnValue"]
-        or
-        input = "ReturnValue of Argument[0]" and
-        output = "ReturnValue"
-      ) and
-      preservesValue = true
-    }
-  }
-
-  private class FindAllSummary extends SimpleSummarizedCallable {
-    FindAllSummary() { this = "find_all" }
-
-    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-      any(FilterSummary f).propagatesFlowExt(input, output, preservesValue)
     }
   }
 
@@ -1501,21 +1522,6 @@ module Enumerable {
     }
   }
 
-  private class FlatMapSummary extends SimpleSummarizedCallable {
-    FlatMapSummary() { this = "flat_map" }
-
-    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-      (
-        input = "ArrayElement of Receiver" and
-        output = "Parameter[0] of BlockArgument"
-        or
-        input = "ArrayElement of ReturnValue of BlockArgument" and
-        output = "ArrayElement[?] of ReturnValue"
-      ) and
-      preservesValue = true
-    }
-  }
-
   abstract private class GrepSummary extends SummarizedCallable {
     MethodCall mc;
 
@@ -1549,5 +1555,16 @@ module Enumerable {
       preservesValue = true
     }
   }
+
   // TODO: Implement `group_by` when we have flow through hashes
+  private class SelectSummary extends SimpleSummarizedCallable {
+    // `find_all` and `filter` are aliases of `select`.
+    SelectSummary() { this = ["select", "find_all", "filter"] }
+
+    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+      input = "ArrayElement of Receiver" and
+      output = ["Parameter[0] of BlockArgument", "ArrayElement[?] of ReturnValue"] and
+      preservesValue = true
+    }
+  }
 }
