@@ -15,9 +15,12 @@ class Variable extends @variable, Annotatable, Element, Modifiable {
   /** Gets an access to this variable. */
   VarAccess getAnAccess() { variableBinding(result, this) }
 
-  /** Gets an expression on the right-hand side of an assignment to this variable. */
+  /**
+   * Gets an expression assigned to this variable, either appearing on the right-hand side of an
+   * assignment or bound to it via a binding `instanceof` expression or `switch` block.
+   */
   Expr getAnAssignedValue() {
-    exists(LocalVariableDeclExpr e | e.getVariable() = this and result = e.getInit())
+    exists(LocalVariableDeclExpr e | e.getVariable() = this and result = e.getInitOrPatternSource())
     or
     exists(AssignExpr e | e.getDest() = this.getAnAccess() and result = e.getSource())
   }
@@ -55,7 +58,13 @@ class LocalVariableDecl extends @localvar, LocalScopeVariable {
   /** Gets the callable in which this declaration occurs. */
   Callable getEnclosingCallable() { result = this.getCallable() }
 
-  override string toString() { result = this.getType().getName() + " " + this.getName() }
+  override string toString() {
+    exists(string sourceName |
+      if this.getName() = "" then sourceName = "_" else sourceName = this.getName()
+    |
+      result = this.getType().getName() + " " + sourceName
+    )
+  }
 
   /** Gets the initializer expression of this local variable declaration. */
   override Expr getInitializer() { result = this.getDeclExpr().getInit() }
@@ -91,7 +100,7 @@ class Parameter extends Element, @param, LocalScopeVariable {
 
   /** Holds if this formal parameter is a parameter representing the dispatch receiver in an extension method. */
   predicate isExtensionParameter() {
-    this.getPosition() = 0 and this.getCallable() instanceof ExtensionMethod
+    this.getPosition() = this.getCallable().(ExtensionMethod).getExtensionReceiverParameterIndex()
   }
 
   /**
@@ -114,4 +123,11 @@ class Parameter extends Element, @param, LocalScopeVariable {
   }
 
   override string getAPrimaryQlClass() { result = "Parameter" }
+
+  override string toString() {
+    if this.getName() = "" then result = "<anonymous parameter>" else result = super.toString()
+  }
+
+  /** Holds if this is an anonymous parameter, `_` */
+  predicate isAnonymous() { this.getName() = "" }
 }

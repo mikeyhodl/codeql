@@ -58,9 +58,7 @@ abstract class WhitelistedLiveCallable extends CallableEntryPoint { }
 /**
  * A `public static void main(String[] args)` method.
  */
-class MainMethodEntry extends CallableEntryPoint {
-  MainMethodEntry() { this instanceof MainMethod }
-}
+class MainMethodEntry extends CallableEntryPoint instanceof MainMethod { }
 
 /**
  * A method that overrides a library method -- the result is
@@ -96,9 +94,8 @@ abstract class ReflectivelyConstructedClass extends EntryPoint, Class {
 /**
  * Classes that are deserialized by Jackson are reflectively constructed.
  */
-library class JacksonReflectivelyConstructedClass extends ReflectivelyConstructedClass {
-  JacksonReflectivelyConstructedClass() { this instanceof JacksonDeserializableType }
-
+class JacksonReflectivelyConstructedClass extends ReflectivelyConstructedClass instanceof JacksonDeserializableType
+{
   override Callable getALiveCallable() {
     // Constructors may be called by Jackson, if they are a no-arg, they have a suitable annotation,
     // or inherit a suitable annotation through a mixin.
@@ -138,14 +135,10 @@ class JaxAnnotationReflectivelyConstructedClass extends ReflectivelyConstructedC
   }
 }
 
-/** DEPRECATED: Alias for JaxAnnotationReflectivelyConstructedClass */
-deprecated class JAXAnnotationReflectivelyConstructedClass =
-  JaxAnnotationReflectivelyConstructedClass;
-
 class DeserializedClass extends ReflectivelyConstructedClass {
   DeserializedClass() {
     exists(CastingExpr cast, ReadObjectMethod readObject |
-      cast.getExpr().(MethodAccess).getMethod() = readObject
+      cast.getExpr().(MethodCall).getMethod() = readObject
     |
       hasDescendant(cast.getType(), this)
     )
@@ -167,7 +160,7 @@ class NewInstanceCall extends EntryPoint, NewInstance {
 /**
  * A call to either `Class.getMethod(...)` or `Class.getDeclaredMethod(...)`.
  */
-class ReflectiveMethodAccessEntryPoint extends EntryPoint, ReflectiveMethodAccess {
+class ReflectiveGetMethodCallEntryPoint extends EntryPoint, ReflectiveGetMethodCall {
   override Method getALiveCallable() {
     result = this.inferAccessedMethod() and
     // The `getMethod(...)` call must be used in a live context.
@@ -312,9 +305,8 @@ class FacesAccessibleMethodEntryPoint extends CallableEntryPoint {
  * A Java Server Faces custom component, that is reflectively constructed by the framework when
  * used in a view (JSP or facelet).
  */
-class FacesComponentReflectivelyConstructedClass extends ReflectivelyConstructedClass {
-  FacesComponentReflectivelyConstructedClass() { this instanceof FacesComponent }
-}
+class FacesComponentReflectivelyConstructedClass extends ReflectivelyConstructedClass instanceof FacesComponent
+{ }
 
 /**
  * Entry point for EJB home interfaces.
@@ -325,9 +317,6 @@ class EjbHome extends Interface, EntryPoint {
   override Callable getALiveCallable() { result = this.getACallable() }
 }
 
-/** DEPRECATED: Alias for EjbHome */
-deprecated class EJBHome = EjbHome;
-
 /**
  * Entry point for EJB object interfaces.
  */
@@ -336,9 +325,6 @@ class EjbObject extends Interface, EntryPoint {
 
   override Callable getALiveCallable() { result = this.getACallable() }
 }
-
-/** DEPRECATED: Alias for EjbObject */
-deprecated class EJBObject = EjbObject;
 
 class GsonDeserializationEntryPoint extends ReflectivelyConstructedClass {
   GsonDeserializationEntryPoint() {
@@ -361,9 +347,6 @@ class JaxbDeserializationEntryPoint extends ReflectivelyConstructedClass {
     )
   }
 }
-
-/** DEPRECATED: Alias for JaxbDeserializationEntryPoint */
-deprecated class JAXBDeserializationEntryPoint = JaxbDeserializationEntryPoint;
 
 /**
  * A `javax.annotation` for a method that is called after or before dependency injection on a type.
@@ -400,8 +383,7 @@ class JavaxManagedBeanReflectivelyConstructed extends ReflectivelyConstructedCla
  * Classes marked as Java persistence entities can be reflectively constructed when the data is
  * loaded.
  */
-class PersistentEntityEntryPoint extends ReflectivelyConstructedClass {
-  PersistentEntityEntryPoint() { this instanceof PersistentEntity }
+class PersistentEntityEntryPoint extends ReflectivelyConstructedClass instanceof PersistentEntity {
 }
 
 /**
@@ -461,10 +443,6 @@ class ArbitraryXmlEntryPoint extends ReflectivelyConstructedClass {
   }
 }
 
-/** DEPRECATED: Alias for ArbitraryXmlEntryPoint */
-deprecated class ArbitraryXMLEntryPoint = ArbitraryXmlEntryPoint;
-
 /** A Selenium PageObject, created by a call to PageFactory.initElements(..). */
-class SeleniumPageObjectEntryPoint extends ReflectivelyConstructedClass {
-  SeleniumPageObjectEntryPoint() { this instanceof SeleniumPageObject }
-}
+class SeleniumPageObjectEntryPoint extends ReflectivelyConstructedClass instanceof SeleniumPageObject
+{ }

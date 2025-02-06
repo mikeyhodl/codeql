@@ -326,6 +326,10 @@ class C1
     def instance
         puts "C1#instance"
     end
+
+    def return_self
+        self
+    end
 end
 
 class C2 < C1
@@ -360,9 +364,12 @@ end
 
 c1 = C1.new
 c1.instance
+
 pattern_dispatch (C1.new)
 pattern_dispatch (C2.new)
 pattern_dispatch (C3.new)
+
+C3.new.return_self.instance
 
 def add_singleton x
     def x.instance
@@ -373,6 +380,7 @@ end
 c3 = C1.new
 add_singleton c3
 c3.instance
+c3.return_self.instance
 
 class SingletonOverride1
     class << self
@@ -614,3 +622,46 @@ end
 SingletonA.call_call_singleton1
 SingletonB.call_call_singleton1
 SingletonC.call_call_singleton1
+
+module Included
+    def foo
+        self.bar
+    end
+    def bar
+    end
+end
+
+class IncludesIncluded
+    include Included
+    def bar
+        super
+    end
+end
+
+class CustomNew1
+    def self.new
+        C1.new
+    end     
+end
+
+CustomNew1.new.instance
+
+class CustomNew2
+    def self.new
+        self.allocate
+    end
+
+    def instance
+        puts "CustomNew2#instance"
+    end
+end
+
+CustomNew2.new.instance
+
+def capture_parameter x
+    [0,1,2].each do
+        x
+    end
+end
+
+(capture_parameter C1.new).instance # NoMethodError

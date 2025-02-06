@@ -49,6 +49,15 @@ EOF
         end
         Open3.capture2("echo #{cmd}")
     end
+
+    def update
+      cmd = params[:key]
+      case cmd
+      when "foo"
+        system(cmd)
+      end
+      system(cmd)
+    end
 end
 
 module Types
@@ -87,4 +96,23 @@ module Types
       system("echo #{arg}") # OK, this is just a random method, not a resolver method
     end
   end
+end
+
+class Foo < ActionController::Base
+    def create
+        file = params[:file]
+        system("cat #{file}")
+        # .shellescape
+        system("cat #{file.shellescape}") # OK, because file is shell escaped
+        
+    end
+
+    def index
+      Terrapin::CommandLine.new(params[:foo], "bar") # BAD
+
+      Terrapin::CommandLine.new("echo", "#{params[foo]}") # BAD
+
+      cmd = Terrapin::CommandLine.new("echo", ":msg")
+      cmd.run(msg: params[:foo]) # GOOD
+    end
 end

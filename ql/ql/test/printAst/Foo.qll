@@ -25,3 +25,9 @@ predicate calls(Foo f) {
   or
   true = false
 }
+
+newtype TPathNode = TPathNodeMid()
+
+private newtype TPathNode2 =
+  TPathNodeMid2(boolean foo) { foo = true } or
+  TPathNodeSink(string bar) { bar = "bar" }

@@ -2,7 +2,6 @@
 
 import csharp
 private import semmle.code.csharp.frameworks.system.Collections
-private import semmle.code.csharp.dataflow.ExternalFlow
 
 /** The `System.Collections.Generic` namespace. */
 class SystemCollectionsGenericNamespace extends Namespace {
@@ -33,9 +32,10 @@ class SystemCollectionsGenericUnboundGenericStruct extends UnboundGenericStruct 
   }
 }
 
-/** The `System.Collections.Generic.IComparer<>` interface. */
-class SystemCollectionsGenericIComparerTInterface extends SystemCollectionsGenericUnboundGenericInterface {
-  SystemCollectionsGenericIComparerTInterface() { this.hasName("IComparer<>") }
+/** The ``System.Collections.Generic.IComparer`1`` interface. */
+class SystemCollectionsGenericIComparerTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericIComparerTInterface() { this.hasName("IComparer`1") }
 
   /** Gets the `int Compare(T, T)` method. */
   Method getCompareMethod() {
@@ -48,9 +48,10 @@ class SystemCollectionsGenericIComparerTInterface extends SystemCollectionsGener
   }
 }
 
-/** The `System.Collections.Generic.IEqualityComparer<>` interface. */
-class SystemCollectionsGenericIEqualityComparerTInterface extends SystemCollectionsGenericUnboundGenericInterface {
-  SystemCollectionsGenericIEqualityComparerTInterface() { this.hasName("IEqualityComparer<>") }
+/** The ``System.Collections.Generic.IEqualityComparer`1`` interface. */
+class SystemCollectionsGenericIEqualityComparerTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericIEqualityComparerTInterface() { this.hasName("IEqualityComparer`1") }
 
   /** Gets the `bool Equals(T, T)` method. */
   Method getEqualsMethod() {
@@ -63,26 +64,20 @@ class SystemCollectionsGenericIEqualityComparerTInterface extends SystemCollecti
   }
 }
 
-/** The `System.Collections.Generic.IEnumerable<>` interface. */
-class SystemCollectionsGenericIEnumerableTInterface extends SystemCollectionsGenericUnboundGenericInterface {
+/** The ``System.Collections.Generic.IEnumerable`1`` interface. */
+class SystemCollectionsGenericIEnumerableTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
   SystemCollectionsGenericIEnumerableTInterface() {
-    this.hasName("IEnumerable<>") and
+    this.hasName("IEnumerable`1") and
     this.getNumberOfTypeParameters() = 1
   }
 }
 
-/** Data flow for `System.Collections.Generic.IEnumerable<>`. */
-private class SystemCollectionsGenericEnumerableTFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      "System.Collections.Generic;IEnumerable<>;true;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.IEnumerator<>.Current];value;manual"
-  }
-}
-
-/** The `System.Collections.Generic.IEnumerator<>` interface. */
-class SystemCollectionsGenericIEnumeratorInterface extends SystemCollectionsGenericUnboundGenericInterface {
+/** The ``System.Collections.Generic.IEnumerator`1`` interface. */
+class SystemCollectionsGenericIEnumeratorInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
   SystemCollectionsGenericIEnumeratorInterface() {
-    this.hasName("IEnumerator<>") and
+    this.hasName("IEnumerator`1") and
     this.getNumberOfTypeParameters() = 1
   }
 
@@ -94,60 +89,28 @@ class SystemCollectionsGenericIEnumeratorInterface extends SystemCollectionsGene
   }
 }
 
-/** The `System.Collections.Generic.IList<>` interface. */
-class SystemCollectionsGenericIListTInterface extends SystemCollectionsGenericUnboundGenericInterface {
+/** The ``System.Collections.Generic.IList`1`` interface. */
+class SystemCollectionsGenericIListTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
   SystemCollectionsGenericIListTInterface() {
-    this.hasName("IList<>") and
+    this.hasName("IList`1") and
     this.getNumberOfTypeParameters() = 1
   }
 }
 
-/** Data flow for `System.Collections.Generic.IList<>. */
-private class SystemCollectionsGenericIListTFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;IList<>;true;Insert;(System.Int32,T);;Argument[1];Argument[this].Element;value;manual",
-        "System.Collections.Generic;IList<>;true;get_Item;(System.Int32);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;IList<>;true;set_Item;(System.Int32,T);;Argument[1];Argument[this].Element;value;manual",
-      ]
-  }
-}
-
-/** The `System.Collections.Generic.List<>` class. */
+/** The ``System.Collections.Generic.List`1`` class. */
 class SystemCollectionsGenericListClass extends SystemCollectionsGenericUnboundGenericClass {
   SystemCollectionsGenericListClass() {
-    this.hasName("List<>") and
+    this.hasName("List`1") and
     this.getNumberOfTypeParameters() = 1
   }
 }
 
-/** Data flow for `System.Collections.Generic.List<>. */
-private class SystemCollectionsGenericListFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;List<>;false;AddRange;(System.Collections.Generic.IEnumerable<T>);;Argument[0].Element;Argument[this].Element;value;manual",
-        "System.Collections.Generic;List<>;false;AsReadOnly;();;Argument[0].Element;ReturnValue.Element;value;manual",
-        "System.Collections.Generic;List<>;false;Find;(System.Predicate<T>);;Argument[this].Element;Argument[0].Parameter[0];value;manual",
-        "System.Collections.Generic;List<>;false;Find;(System.Predicate<T>);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;List<>;false;FindAll;(System.Predicate<T>);;Argument[this].Element;Argument[0].Parameter[0];value;manual",
-        "System.Collections.Generic;List<>;false;FindAll;(System.Predicate<T>);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;List<>;false;FindLast;(System.Predicate<T>);;Argument[this].Element;Argument[0].Parameter[0];value;manual",
-        "System.Collections.Generic;List<>;false;FindLast;(System.Predicate<T>);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;List<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.List<>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;List<>;false;GetRange;(System.Int32,System.Int32);;Argument[0].Element;ReturnValue.Element;value;manual",
-        "System.Collections.Generic;List<>;false;InsertRange;(System.Int32,System.Collections.Generic.IEnumerable<T>);;Argument[1].Element;Argument[this].Element;value;manual",
-        "System.Collections.Generic;List<>;false;Reverse;();;Argument[0].Element;ReturnValue.Element;value;manual",
-        "System.Collections.Generic;List<>;false;Reverse;(System.Int32,System.Int32);;Argument[0].Element;ReturnValue.Element;value;manual",
-      ]
-  }
-}
-
-/** The `System.Collections.Generic.KeyValuePair<,>` structure. */
-class SystemCollectionsGenericKeyValuePairStruct extends SystemCollectionsGenericUnboundGenericStruct {
+/** The ``System.Collections.Generic.KeyValuePair`2`` structure. */
+class SystemCollectionsGenericKeyValuePairStruct extends SystemCollectionsGenericUnboundGenericStruct
+{
   SystemCollectionsGenericKeyValuePairStruct() {
-    this.hasName("KeyValuePair<,>") and
+    this.hasName("KeyValuePair`2") and
     this.getNumberOfTypeParameters() = 2
   }
 
@@ -166,20 +129,10 @@ class SystemCollectionsGenericKeyValuePairStruct extends SystemCollectionsGeneri
   }
 }
 
-/** Data flow for `System.Collections.Generic.KeyValuePair<,>`. */
-private class SystemCollectionsGenericKeyValuePairStructFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;KeyValuePair<,>;false;KeyValuePair;(TKey,TValue);;Argument[0];Argument[this].Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;KeyValuePair<,>;false;KeyValuePair;(TKey,TValue);;Argument[1];Argument[this].Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual"
-      ]
-  }
-}
-
-/** The `System.Collections.Generic.ICollection<>` interface. */
-class SystemCollectionsGenericICollectionInterface extends SystemCollectionsGenericUnboundGenericInterface {
-  SystemCollectionsGenericICollectionInterface() { this.hasName("ICollection<>") }
+/** The ``System.Collections.Generic.ICollection`1`` interface. */
+class SystemCollectionsGenericICollectionInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericICollectionInterface() { this.hasName("ICollection`1") }
 
   /** Gets the `Count` property. */
   Property getCountProperty() { result = this.getProperty("Count") }
@@ -191,173 +144,35 @@ class SystemCollectionsGenericICollectionInterface extends SystemCollectionsGene
   Method getAddMethod() { result = this.getAMethod("Add") }
 }
 
-/** Data flow for `System.Collections.Generic.ICollection<>`. */
-private class SystemCollectionsGenericICollectionFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;ICollection<>;true;Add;(T);;Argument[0];Argument[this].Element;value;manual",
-        "System.Collections.Generic;ICollection<>;true;Clear;();;Argument[this].WithoutElement;Argument[this];value;manual",
-        "System.Collections.Generic;ICollection<>;true;CopyTo;(T[],System.Int32);;Argument[this].Element;Argument[0].Element;value;manual",
-      ]
-  }
+/** The ``System.Collections.Generic.IList`1`` interface. */
+class SystemCollectionsGenericIListInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericIListInterface() { this.hasName("IList`1") }
 }
 
-/** The `System.Collections.Generic.IList<>` interface. */
-class SystemCollectionsGenericIListInterface extends SystemCollectionsGenericUnboundGenericInterface {
-  SystemCollectionsGenericIListInterface() { this.hasName("IList<>") }
-}
-
-/** The `System.Collections.Generic.IDictionary<>` interface. */
-class SystemCollectionsGenericIDictionaryInterface extends SystemCollectionsGenericUnboundGenericInterface {
+/** The ``System.Collections.Generic.IDictionary`2`` interface. */
+class SystemCollectionsGenericIDictionaryInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
   SystemCollectionsGenericIDictionaryInterface() {
-    this.hasName("IDictionary<,>") and
+    this.hasName("IDictionary`2") and
     this.getNumberOfTypeParameters() = 2
   }
 }
 
-/** Data flow for `System.Collections.Generic.IDictionary<,>`. */
-private class SystemCollectionsGenericIDictionaryFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;IDictionary<,>;true;Add;(TKey,TValue);;Argument[0];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;Add;(TKey,TValue);;Argument[1];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;get_Item;(TKey);;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];ReturnValue;value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;get_Keys;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;get_Values;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;set_Item;(TKey,TValue);;Argument[0];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;IDictionary<,>;true;set_Item;(TKey,TValue);;Argument[1];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-      ]
+/** The ``System.Collections.Generic.IReadOnlyCollection`1`` interface. */
+class SystemCollectionsGenericIReadOnlyCollectionTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericIReadOnlyCollectionTInterface() {
+    this.hasName("IReadOnlyCollection`1") and
+    this.getNumberOfTypeParameters() = 1
   }
 }
 
-/** Data flow for `System.Collections.Generic.Dictionary<,>`. */
-private class SystemCollectionsGenericDictionaryFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;Dictionary<,>+KeyCollection;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.Dictionary<,>+KeyCollection+Enumerator.Current];value;manual",
-        "System.Collections.Generic;Dictionary<,>+ValueCollection;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.Dictionary<,>+ValueCollection+Enumerator.Current];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IEqualityComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IEqualityComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<TKey,TValue>>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<TKey,TValue>>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<TKey,TValue>>,System.Collections.Generic.IEqualityComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;Dictionary;(System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<TKey,TValue>>,System.Collections.Generic.IEqualityComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.Dictionary<,>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;get_Keys;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;Dictionary<,>;false;get_Values;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];ReturnValue.Element;value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.SortedDictionary<,>. */
-private class SystemCollectionsGenericSortedDictionaryFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;SortedDictionary<,>+KeyCollection;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.SortedDictionary<,>+KeyCollection+Enumerator.Current];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>+ValueCollection;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.SortedDictionary<,>+ValueCollection+Enumerator.Current];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.SortedDictionary<,>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;SortedDictionary;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;SortedDictionary;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;SortedDictionary;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;SortedDictionary;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;get_Keys;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;SortedDictionary<,>;false;get_Values;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];ReturnValue.Element;value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.SortedList<,>. */
-private class SystemCollectionsGenericSortedListFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;SortedList<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;Add;(System.Collections.Generic.KeyValuePair<TKey,TValue>);;Argument[0].Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.IEnumerator<>.Current];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;SortedList;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;SortedList;(System.Collections.Generic.IDictionary<TKey,TValue>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;SortedList;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;SortedList;(System.Collections.Generic.IDictionary<TKey,TValue>,System.Collections.Generic.IComparer<TKey>);;Argument[0].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];value;manual",
-        "System.Collections.Generic;SortedList<,>;false;get_Keys;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Key];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;SortedList<,>;false;get_Values;();;Argument[this].Element.Property[System.Collections.Generic.KeyValuePair<,>.Value];ReturnValue.Element;value;manual",
-        "System.Collections.Generic;SortedList<,>+KeyList;false;Clear;();;Argument[this].WithoutElement;Argument[this];value;manual",
-        "System.Collections.Generic;SortedList<,>+ValueList;false;Clear;();;Argument[this].WithoutElement;Argument[this];value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.Queue<>. */
-private class SystemCollectionsGenericQueueFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;Queue<>;false;Clear;();;Argument[this].WithoutElement;Argument[this];value;manual",
-        "System.Collections.Generic;Queue<>;false;CopyTo;(T[],System.Int32);;Argument[this].Element;Argument[0].Element;value;manual",
-        "System.Collections.Generic;Queue<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.Queue<>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;Queue<>;false;Peek;();;Argument[this].Element;ReturnValue;value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.Stack<>. */
-private class SystemCollectionsGenericStackFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;Stack<>;false;Clear;();;Argument[this].WithoutElement;Argument[this];value;manual",
-        "System.Collections.Generic;Stack<>;false;CopyTo;(T[],System.Int32);;Argument[this].Element;Argument[0].Element;value;manual",
-        "System.Collections.Generic;Stack<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.Stack<>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;Stack<>;false;Peek;();;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;Stack<>;false;Pop;();;Argument[this].Element;ReturnValue;value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.HashSet<>. */
-private class SystemCollectionsGenericHashSetFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      "System.Collections.Generic;HashSet<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.HashSet<>+Enumerator.Current];value;manual"
-  }
-}
-
-/** Data flow for `System.Collections.Generic.ISet<>. */
-private class SystemCollectionsGenericISetFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      "System.Collections.Generic;ISet<>;true;Add;(T);;Argument[0];Argument[this].Element;value;manual"
-  }
-}
-
-/** Data flow for `System.Collections.Generic.LinkedList<>. */
-private class SystemCollectionsGenericLinkedListFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;LinkedList<>;false;Find;(T);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;LinkedList<>;false;FindLast;(T);;Argument[this].Element;ReturnValue;value;manual",
-        "System.Collections.Generic;LinkedList<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.LinkedList<>+Enumerator.Current];value;manual",
-      ]
-  }
-}
-
-/** Data flow for `System.Collections.Generic.SortedSet<>. */
-private class SystemCollectionsGenericSortedSetFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Collections.Generic;SortedSet<>;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.Generic.SortedSet<>+Enumerator.Current];value;manual",
-        "System.Collections.Generic;SortedSet<>;false;Reverse;();;Argument[0].Element;ReturnValue.Element;value;manual",
-      ]
+/** The ``System.Collections.Generic.IReadOnlyList`1`` interface. */
+class SystemCollectionsGenericIReadOnlyListTInterface extends SystemCollectionsGenericUnboundGenericInterface
+{
+  SystemCollectionsGenericIReadOnlyListTInterface() {
+    this.hasName("IReadOnlyList`1") and
+    this.getNumberOfTypeParameters() = 1
   }
 }

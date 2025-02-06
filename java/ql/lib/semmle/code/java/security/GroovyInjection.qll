@@ -21,48 +21,7 @@ class GroovyInjectionAdditionalTaintStep extends Unit {
 }
 
 private class DefaultGroovyInjectionSink extends GroovyInjectionSink {
-  DefaultGroovyInjectionSink() { sinkNode(this, "groovy") }
-}
-
-private class DefaultGroovyInjectionSinkModel extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        // Signatures are specified to exclude sinks of the type `File`
-        "groovy.lang;GroovyShell;false;evaluate;(GroovyCodeSource);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(Reader);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(Reader,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(String,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(String,String,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;evaluate;(URI);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;parse;(Reader);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;parse;(Reader,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;parse;(String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;parse;(String,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;parse;(URI);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(GroovyCodeSource,String[]);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(GroovyCodeSource,List);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(Reader,String,String[]);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(Reader,String,List);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(String,String,String[]);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(String,String,List);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(URI,String[]);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyShell;false;run;(URI,List);;Argument[0];groovy;manual",
-        "groovy.util;Eval;false;me;(String);;Argument[0];groovy;manual",
-        "groovy.util;Eval;false;me;(String,Object,String);;Argument[2];groovy;manual",
-        "groovy.util;Eval;false;x;(Object,String);;Argument[1];groovy;manual",
-        "groovy.util;Eval;false;xy;(Object,Object,String);;Argument[2];groovy;manual",
-        "groovy.util;Eval;false;xyz;(Object,Object,Object,String);;Argument[3];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(GroovyCodeSource);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(GroovyCodeSource,boolean);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(InputStream,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(Reader,String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(String);;Argument[0];groovy;manual",
-        "groovy.lang;GroovyClassLoader;false;parseClass;(String,String);;Argument[0];groovy;manual",
-        "org.codehaus.groovy.control;CompilationUnit;false;compile;;;Argument[-1];groovy;manual"
-      ]
-  }
+  DefaultGroovyInjectionSink() { sinkNode(this, "groovy-injection") }
 }
 
 /** A set of additional taint steps to consider when taint tracking Groovy related data flows. */
@@ -92,7 +51,7 @@ private predicate groovyCodeSourceTaintStep(DataFlow::Node fromNode, DataFlow::N
  * a `CompilationUnit` instance by calling `compilationUnit.addSource(..., tainted)`.
  */
 private predicate groovyCompilationUnitTaintStep(DataFlow::Node fromNode, DataFlow::Node toNode) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     ma.getMethod() = m and
     m.hasName("addSource") and
     m.getDeclaringType() instanceof TypeGroovyCompilationUnit
@@ -125,7 +84,7 @@ private predicate groovySourceUnitTaintStep(DataFlow::Node fromNode, DataFlow::N
     toNode.asExpr() = cie
   )
   or
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     ma.getMethod() = m and
     m.hasName("create") and
     m.getDeclaringType() instanceof TypeGroovySourceUnit

@@ -7,6 +7,7 @@ import semmle.code.java.frameworks.UnboundId
 import semmle.code.java.frameworks.SpringLdap
 import semmle.code.java.frameworks.ApacheLdap
 private import semmle.code.java.dataflow.ExternalFlow
+private import semmle.code.java.security.Sanitizers
 
 /** A data flow sink for unvalidated user input that is used to construct LDAP queries. */
 abstract class LdapInjectionSink extends DataFlow::Node { }
@@ -29,63 +30,11 @@ class LdapInjectionAdditionalTaintStep extends Unit {
 
 /** Default sink for LDAP injection vulnerabilities. */
 private class DefaultLdapInjectionSink extends LdapInjectionSink {
-  DefaultLdapInjectionSink() { sinkNode(this, "ldap") }
-}
-
-private class DefaultLdapInjectionSinkModel extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        // jndi
-        "javax.naming.directory;DirContext;true;search;;;Argument[0..1];ldap;manual",
-        // apache
-        "org.apache.directory.ldap.client.api;LdapConnection;true;search;;;Argument[0..2];ldap;manual",
-        // UnboundID: search
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(ReadOnlySearchRequest);;Argument[0];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(SearchRequest);;Argument[0];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(SearchResultListener,String,SearchScope,DereferencePolicy,int,int,boolean,Filter,String[]);;Argument[0..7];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(SearchResultListener,String,SearchScope,DereferencePolicy,int,int,boolean,String,String[]);;Argument[0..7];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(SearchResultListener,String,SearchScope,Filter,String[]);;Argument[0..3];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(SearchResultListener,String,SearchScope,String,String[]);;Argument[0..3];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(String,SearchScope,DereferencePolicy,int,int,boolean,Filter,String[]);;Argument[0..6];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(String,SearchScope,DereferencePolicy,int,int,boolean,String,String[]);;Argument[0..6];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(String,SearchScope,Filter,String[]);;Argument[0..2];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;search;(String,SearchScope,String,String[]);;Argument[0..2];ldap;manual",
-        // UnboundID: searchForEntry
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(ReadOnlySearchRequest);;Argument[0];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(SearchRequest);;Argument[0];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(String,SearchScope,DereferencePolicy,int,boolean,Filter,String[]);;Argument[0..5];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(String,SearchScope,DereferencePolicy,int,boolean,String,String[]);;Argument[0..5];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(String,SearchScope,Filter,String[]);;Argument[0..2];ldap;manual",
-        "com.unboundid.ldap.sdk;LDAPConnection;false;searchForEntry;(String,SearchScope,String,String[]);;Argument[0..2];ldap;manual",
-        // UnboundID: asyncSearch
-        "com.unboundid.ldap.sdk;LDAPConnection;false;asyncSearch;;;Argument[0];ldap;manual",
-        // Spring
-        "org.springframework.ldap.core;LdapTemplate;false;find;;;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;findOne;;;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;search;;;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;searchForContext;;;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;searchForObject;;;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(LdapQuery,String);;Argument[0];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(Name,String,String);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(Name,String,String,AuthenticatedLdapEntryContextCallback);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(Name,String,String,AuthenticatedLdapEntryContextCallback,AuthenticationErrorCallback);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(Name,String,String,AuthenticationErrorCallback);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(String,String,String);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(String,String,String,AuthenticatedLdapEntryContextCallback);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(String,String,String,AuthenticatedLdapEntryContextCallback,AuthenticationErrorCallback);;Argument[0..1];ldap;manual",
-        "org.springframework.ldap.core;LdapTemplate;false;authenticate;(String,String,String,AuthenticationErrorCallback);;Argument[0..1];ldap;manual"
-      ]
-  }
+  DefaultLdapInjectionSink() { sinkNode(this, "ldap-injection") }
 }
 
 /** A sanitizer that clears the taint on (boxed) primitive types. */
-private class DefaultLdapSanitizer extends LdapInjectionSanitizer {
-  DefaultLdapSanitizer() {
-    this.getType() instanceof PrimitiveType or
-    this.getType() instanceof BoxedType
-  }
-}
+private class DefaultLdapSanitizer extends LdapInjectionSanitizer instanceof SimpleTypeSanitizer { }
 
 /**
  * Holds if `n1` to `n2` is a dataflow step that converts between `String` and `LdapName`,
@@ -103,7 +52,7 @@ private predicate ldapNameStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
  * i.e. `new LdapName().addAll(tainted)`.
  */
 private predicate ldapNameAddAllStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma |
+  exists(MethodCall ma |
     n1.asExpr() = ma.getAnArgument() and
     (n2.asExpr() = ma or n2.asExpr() = ma.getQualifier())
   |
@@ -113,16 +62,15 @@ private predicate ldapNameAddAllStep(DataFlow::ExprNode n1, DataFlow::ExprNode n
 
 /**
  * Holds if `n1` to `n2` is a dataflow step that converts between `LdapName` and `LdapName` or
- * `String`, i.e. `taintedLdapName.clone()`, `taintedLdapName.getAll()`,
+ * `String`, i.e. `taintedLdapName.getAll()`,
  * `taintedLdapName.getRdns()` or `taintedLdapName.toString()`.
  */
 private predicate ldapNameGetCloneStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getQualifier() and
     n2.asExpr() = ma and
     ma.getMethod() = m
   |
-    m instanceof MethodLdapNameClone or
     m instanceof MethodLdapNameGetAll or
     m instanceof MethodLdapNameGetRdns or
     m instanceof MethodLdapNameToString
@@ -134,7 +82,7 @@ private predicate ldapNameGetCloneStep(DataFlow::ExprNode n1, DataFlow::ExprNode
  * i.e. `Filter.create*(tainted)`.
  */
 private predicate filterStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getAnArgument() and
     n2.asExpr() = ma and
     ma.getMethod() = m
@@ -152,7 +100,7 @@ private predicate filterStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
  * i.e. `taintedFilter.toString()` or `taintedFilter.toString(buffer)`.
  */
 private predicate filterToStringStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getQualifier() and
     (n2.asExpr() = ma or n2.asExpr() = ma.getAnArgument())
   |
@@ -182,7 +130,7 @@ private predicate unboundIdSearchRequestStep(DataFlow::ExprNode n1, DataFlow::Ex
  * and UnboundID `SearchRequest`, i.e. `taintedSearchRequest.duplicate()`.
  */
 private predicate unboundIdSearchRequestDuplicateStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
+  exists(MethodCall ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
     ma.getMethod() = m and
     m.getDeclaringType().getAnAncestor() instanceof TypeUnboundIdReadOnlySearchRequest and
     m.hasName("duplicate")
@@ -194,7 +142,7 @@ private predicate unboundIdSearchRequestDuplicateStep(DataFlow::ExprNode n1, Dat
  * `SearchRequest`, i.e. `searchRequest.setBaseDN(tainted)` or `searchRequest.setFilter(tainted)`.
  */
 private predicate unboundIdSearchRequestSetStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getAnArgument() and
     n2.asExpr() = ma.getQualifier() and
     ma.getMethod() = m
@@ -209,7 +157,7 @@ private predicate unboundIdSearchRequestSetStep(DataFlow::ExprNode n1, DataFlow:
  * i.e. `LdapQueryBuilder.query().filter(tainted)` or `LdapQueryBuilder.query().base(tainted)`.
  */
 private predicate ldapQueryStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m, int index |
+  exists(MethodCall ma, Method m, int index |
     n1.asExpr() = ma.getArgument(index) and
     n2.asExpr() = ma and
     ma.getMethod() = m and
@@ -225,7 +173,7 @@ private predicate ldapQueryStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
  * `Name`, i.e. `taintedLdapQueryBuilder.base()`.
  */
 private predicate ldapQueryBaseStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getQualifier() and
     n2.asExpr() = ma and
     ma.getMethod() = m
@@ -241,7 +189,7 @@ private predicate ldapQueryBaseStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2
  * `query().base(tainted).where("objectclass").is("person")`.
  */
 private predicate ldapQueryBuilderStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getQualifier() and
     n2.asExpr() = ma and
     ma.getMethod() = m
@@ -276,7 +224,7 @@ private predicate hardcodedFilterStep(DataFlow::ExprNode n1, DataFlow::ExprNode 
  * `taintedFilter.encode(buffer)`.
  */
 private predicate springLdapFilterToStringStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getQualifier() and
     (n2.asExpr() = ma or n2.asExpr() = ma.getAnArgument()) and
     ma.getMethod() = m
@@ -292,7 +240,7 @@ private predicate springLdapFilterToStringStep(DataFlow::ExprNode n1, DataFlow::
  * `LdapNameBuilder.newInstance().add(tainted)`.
  */
 private predicate ldapNameBuilderStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getAnArgument() and
     (n2.asExpr() = ma or n2.asExpr() = ma.getQualifier()) and
     ma.getMethod() = m and
@@ -308,7 +256,7 @@ private predicate ldapNameBuilderStep(DataFlow::ExprNode n1, DataFlow::ExprNode 
  * and `LdapName`, `LdapNameBuilder.build()`.
  */
 private predicate ldapNameBuilderBuildStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
+  exists(MethodCall ma | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
     ma.getMethod() instanceof MethodSpringLdapNameBuilderBuild
   )
 }
@@ -318,7 +266,7 @@ private predicate ldapNameBuilderBuildStep(DataFlow::ExprNode n1, DataFlow::Expr
  * Spring `LdapUtils.newLdapName`, i.e. `LdapUtils.newLdapName(tainted)`.
  */
 private predicate ldapUtilsStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma | n1.asExpr() = ma.getAnArgument() and n2.asExpr() = ma |
+  exists(MethodCall ma | n1.asExpr() = ma.getAnArgument() and n2.asExpr() = ma |
     ma.getMethod() instanceof MethodSpringLdapUtilsNewLdapName
   )
 }
@@ -328,7 +276,7 @@ private predicate ldapUtilsStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
  * `SearchRequest`, i.e. `searchRequest.setFilter(tainted)` or `searchRequest.setBase(tainted)`.
  */
 private predicate apacheSearchRequestStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     n1.asExpr() = ma.getAnArgument() and
     n2.asExpr() = ma.getQualifier()
   |
@@ -343,7 +291,7 @@ private predicate apacheSearchRequestStep(DataFlow::ExprNode n1, DataFlow::ExprN
  * and filter or DN i.e. `tainterSearchRequest.getFilter()` or `taintedSearchRequest.getBase()`.
  */
 private predicate apacheSearchRequestGetStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
+  exists(MethodCall ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
     ma.getMethod() = m and
     m.getDeclaringType().getAnAncestor() instanceof TypeApacheSearchRequest and
     (m.hasName("getFilter") or m.hasName("getBase"))
@@ -366,7 +314,7 @@ private predicate apacheLdapDnStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2)
  * and `String` i.e. `taintedDn.getName()`, `taintedDn.getNormName()` or `taintedDn.toString()`.
  */
 private predicate apacheLdapDnGetStep(DataFlow::ExprNode n1, DataFlow::ExprNode n2) {
-  exists(MethodAccess ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
+  exists(MethodCall ma, Method m | n1.asExpr() = ma.getQualifier() and n2.asExpr() = ma |
     ma.getMethod() = m and
     m.getDeclaringType().getAnAncestor() instanceof TypeApacheDn and
     (m.hasName("getName") or m.hasName("getNormName") or m.hasName("toString"))

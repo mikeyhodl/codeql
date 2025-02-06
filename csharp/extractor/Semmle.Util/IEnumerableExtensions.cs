@@ -80,6 +80,19 @@ namespace Semmle.Util
         }
 
         /// <summary>
+        /// Applies the action <paramref name="a"/> to each item and its index in this collection.
+        /// </summary>
+        public static void ForEach<T>(this IEnumerable<T> items, Action<T, int> a)
+        {
+            var i = 0;
+            foreach (var item in items)
+            {
+                a(item, i);
+                i++;
+            }
+        }
+
+        /// <summary>
         /// Forces enumeration of this collection and discards the result.
         /// </summary>
         public static void Enumerate<T>(this IEnumerable<T> items)
@@ -100,5 +113,11 @@ namespace Semmle.Util
                 h = h * 7 + i.GetHashCode();
             return h;
         }
+
+        /// <summary>
+        /// Returns the sequence with nulls removed.
+        /// </summary>
+        public static IEnumerable<T> WhereNotNull<T>(this IEnumerable<T?> items) where T : class =>
+            items.Where(i => i is not null)!;
     }
 }

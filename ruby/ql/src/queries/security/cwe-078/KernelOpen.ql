@@ -1,6 +1,7 @@
 /**
- * @name Use of `Kernel.open` or `IO.read` with user-controlled input
- * @description Using `Kernel.open` or `IO.read` may allow a malicious
+ * @name Use of `Kernel.open`, `IO.read` or similar sinks with user-controlled input
+ * @description Using `Kernel.open`, `IO.read`, `IO.write`, `IO.binread`, `IO.binwrite`,
+ *              `IO.foreach`, `IO.readlines`, or `URI.open` may allow a malicious
  *              user to execute arbitrary system commands.
  * @kind path-problem
  * @problem.severity error
@@ -15,32 +16,14 @@
  */
 
 import codeql.ruby.DataFlow
-import codeql.ruby.TaintTracking
-import codeql.ruby.dataflow.RemoteFlowSources
-import codeql.ruby.dataflow.BarrierGuards
-import DataFlow::PathGraph
 import codeql.ruby.security.KernelOpenQuery
-
-class Configuration extends TaintTracking::Configuration {
-  Configuration() { this = "KernelOpen" }
-
-  override predicate isSource(DataFlow::Node source) { source instanceof RemoteFlowSource }
-
-  override predicate isSink(DataFlow::Node sink) {
-    sink = any(AmbiguousPathCall r).getPathArgument()
-  }
-
-  override predicate isSanitizer(DataFlow::Node node) {
-    node instanceof StringConstCompareBarrier or
-    node instanceof StringConstArrayInclusionCallBarrier
-  }
-}
+import KernelOpenFlow::PathGraph
 
 from
-  Configuration config, DataFlow::PathNode source, DataFlow::PathNode sink,
-  DataFlow::Node sourceNode, DataFlow::CallNode call
+  KernelOpenFlow::PathNode source, KernelOpenFlow::PathNode sink, DataFlow::Node sourceNode,
+  DataFlow::CallNode call
 where
-  config.hasFlowPath(source, sink) and
+  KernelOpenFlow::flowPath(source, sink) and
   sourceNode = source.getNode() and
   call.getArgument(0) = sink.getNode()
 select sink.getNode(), source, sink,

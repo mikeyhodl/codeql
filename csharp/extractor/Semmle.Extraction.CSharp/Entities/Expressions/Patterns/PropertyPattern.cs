@@ -1,15 +1,13 @@
-using System;
 using System.Collections.Generic;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Semmle.Extraction.Kinds;
-using Semmle.Extraction.Entities;
 
 namespace Semmle.Extraction.CSharp.Entities.Expressions
 {
     internal class PropertyPattern : Expression
     {
         internal PropertyPattern(Context cx, PropertyPatternClauseSyntax pp, IExpressionParentEntity parent, int child) :
-            base(new ExpressionInfo(cx, null, cx.CreateLocation(pp.GetLocation()), ExprKind.PROPERTY_PATTERN, parent, child, false, null))
+            base(new ExpressionInfo(cx, null, cx.CreateLocation(pp.GetLocation()), ExprKind.PROPERTY_PATTERN, parent, child, isCompilerGenerated: false, null))
         {
             child = 0;
             foreach (var sub in pp.Subpatterns)
@@ -27,7 +25,7 @@ namespace Semmle.Extraction.CSharp.Entities.Expressions
 
         private class AccessStepPack
         {
-            public readonly List<AccessStep> Prefix = new List<AccessStep>();
+            public List<AccessStep> Prefix { get; } = [];
             public AccessStep Last { get; private set; }
 
             public AccessStepPack Add(string identifier, Microsoft.CodeAnalysis.Location location)
@@ -58,7 +56,7 @@ namespace Semmle.Extraction.CSharp.Entities.Expressions
             };
 
         private static Expression CreateSyntheticExp(Context cx, Microsoft.CodeAnalysis.Location location, IExpressionParentEntity parent, int child) =>
-            new Expression(new ExpressionInfo(cx, null, cx.CreateLocation(location), ExprKind.PROPERTY_PATTERN, parent, child, false, null));
+            new Expression(new ExpressionInfo(cx, null, cx.CreateLocation(location), ExprKind.PROPERTY_PATTERN, parent, child, isCompilerGenerated: false, null));
 
         private static void MakeExpressions(Context cx, IExpressionParentEntity parent, SubpatternSyntax syntax, int child)
         {

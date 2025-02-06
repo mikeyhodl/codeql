@@ -148,4 +148,60 @@ class MyController < ActionController::Base
     p.with_defaults!(params)
     sink p # $hasTaintFlow
   end
+
+  def m33
+    sink params.reverse_update({a: 1, b: 2}) # $hasTaintFlow
+    sink {a: 1}.reverse_update(params) # $hasTaintFlow
+
+    p = {a: 1}
+    p.reverse_update(params)
+    sink p # $hasTaintFlow
+  end
+  
+  include Mixin
+end
+
+module Mixin
+  def m34
+    sink params[:x] # $hasTaintFlow
+  end
+end
+
+class Subclass < MyController
+  def m35
+    sink params[:x] # $hasTaintFlow
+  end
+
+  rescue_from 'Foo::Bar' do |err|
+    sink params[:x] # $hasTaintFlow
+  end
+end
+
+class UploadedFileTests < MyController
+  def m36
+    sink params[:file].original_filename # $hasTaintFlow
+  end
+
+  def m37
+    sink params.require(:file).content_type # $hasTaintFlow
+  end
+
+  def m38
+    sink params.permit(:file)[:file].headers # $hasTaintFlow
+  end
+
+  def m39
+    sink params[:a].to_unsafe_h[:b][:file].read # $hasTaintFlow
+  end
+
+  def m40(a)
+    params[:file].read(nil,a)
+    sink a # $ hasTaintFlow
+  end
+
+  def m41
+    a = ""
+    params[:file].read(nil,a)
+    sink a # $ hasTaintFlow
+  end
 end

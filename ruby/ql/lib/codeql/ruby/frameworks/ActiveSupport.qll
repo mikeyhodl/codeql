@@ -61,7 +61,7 @@ module ActiveSupport {
             ]
         }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           input = "Argument[self]" and output = "ReturnValue" and preservesValue = false
         }
       }
@@ -75,10 +75,44 @@ module ActiveSupport {
       private class IdentitySummary extends SimpleSummarizedCallable {
         IdentitySummary() { this = ["presence", "deep_dup"] }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           input = "Argument[self]" and
           output = "ReturnValue" and
           preservesValue = true
+        }
+      }
+
+      /**
+       * A call to `Object#try`, which may execute its first argument as a Ruby
+       * method call.
+       * ```rb
+       * x = "abc"
+       * x.try(:upcase) # => "ABC"
+       * y = nil
+       * y.try(:upcase) # => nil
+       * ```
+       * `Object#try!` behaves similarly but raises `NoMethodError` if the
+       * receiver is not `nil` and does not respond to the method.
+       */
+      class TryCallCodeExecution extends CodeExecution::Range instanceof DataFlow::CallNode {
+        TryCallCodeExecution() {
+          this.asExpr().getExpr() instanceof UnknownMethodCall and
+          this.getMethodName() = ["try", "try!"]
+        }
+
+        override DataFlow::Node getCode() { result = super.getArgument(0) }
+
+        override predicate runsArbitraryCode() { none() }
+      }
+
+      /** Flow summary for `Object#to_json`, which serializes the receiver as a JSON string. */
+      private class ToJsonSummary extends SimpleSummarizedCallable {
+        ToJsonSummary() { this = "to_json" }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = ["Argument[self]", "Argument[self].Element[any]"] and
+          output = "ReturnValue" and
+          preservesValue = false
         }
       }
     }
@@ -87,12 +121,28 @@ module ActiveSupport {
      * Extensions to the `Hash` class.
      */
     module Hash {
-      private class WithIndifferentAccessSummary extends SimpleSummarizedCallable {
-        WithIndifferentAccessSummary() { this = "with_indifferent_access" }
+      /**
+       * Flow summary for `reverse_merge`, and its alias `with_defaults`.
+       */
+      private class ReverseMergeSummary extends SimpleSummarizedCallable {
+        ReverseMergeSummary() { this = ["reverse_merge", "with_defaults"] }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-          input = "Argument[self].Element[any]" and
-          output = "ReturnValue.Element[any]" and
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self,0].WithElement[any]" and
+          output = "ReturnValue" and
+          preservesValue = true
+        }
+      }
+
+      /**
+       * Flow summary for `reverse_merge!`, and its aliases `with_defaults!` and `reverse_update`.
+       */
+      private class ReverseMergeBangSummary extends SimpleSummarizedCallable {
+        ReverseMergeBangSummary() { this = ["reverse_merge!", "with_defaults!", "reverse_update"] }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self,0].WithElement[any]" and
+          output = ["ReturnValue", "Argument[self]"] and
           preservesValue = true
         }
       }
@@ -106,9 +156,10 @@ module ActiveSupport {
             ]
         }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
-          input = "Argument[self].Element[any]" and
-          output = "ReturnValue.Element[?]" and
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          // keys are considered equal modulo string/symbol in our implementation
+          input = "Argument[self].WithElement[any]" and
+          output = "ReturnValue" and
           preservesValue = true
         }
       }
@@ -149,7 +200,7 @@ module ActiveSupport {
 
         final override MethodCall getACall() { result = mc }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           (
             exists(string s | s = getExtractComponent(mc, _) |
               input = "Argument[self].Element[" + s + "!]" and
@@ -184,7 +235,7 @@ module ActiveSupport {
       private class CompactBlankSummary extends SimpleSummarizedCallable {
         CompactBlankSummary() { this = "compact_blank" }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           input = "Argument[self].Element[any]" and
           output = "ReturnValue.Element[?]" and
           preservesValue = true
@@ -194,7 +245,7 @@ module ActiveSupport {
       private class ExcludingSummary extends SimpleSummarizedCallable {
         ExcludingSummary() { this = ["excluding", "without"] }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           input = "Argument[self].Element[any]" and
           output = "ReturnValue.Element[?]" and
           preservesValue = true
@@ -204,7 +255,7 @@ module ActiveSupport {
       private class InOrderOfSummary extends SimpleSummarizedCallable {
         InOrderOfSummary() { this = "in_order_of" }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           input = "Argument[self].Element[any]" and
           output = "ReturnValue.Element[?]" and
           preservesValue = true
@@ -217,7 +268,7 @@ module ActiveSupport {
       private class IncludingSummary extends SimpleSummarizedCallable {
         IncludingSummary() { this = "including" }
 
-        override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
           (
             exists(ArrayIndex i |
               input = "Argument[self].Element[" + i + "]" and
@@ -235,7 +286,153 @@ module ActiveSupport {
           preservesValue = true
         }
       }
-      // TODO: index_by, index_with, pick, pluck (they require Hash dataflow)
+
+      private class IndexBySummary extends SimpleSummarizedCallable {
+        IndexBySummary() { this = "index_by" }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self].Element[any]" and
+          output = ["Argument[block].Parameter[0]", "ReturnValue.Element[?]"] and
+          preservesValue = true
+        }
+      }
+
+      private class IndexWithSummary extends SimpleSummarizedCallable {
+        IndexWithSummary() { this = "index_with" }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self].Element[any]" and
+          output = "Argument[block].Parameter[0]" and
+          preservesValue = true
+          or
+          input = ["Argument[0]", "Argument[block].ReturnValue"] and
+          output = "ReturnValue.Element[?]" and
+          preservesValue = true
+        }
+      }
+
+      private string getKeyArgument(MethodCall mc, int i) {
+        mc.getMethodName() = ["pick", "pluck"] and
+        result = DataFlow::Content::getKnownElementIndex(mc.getArgument(i)).serialize()
+      }
+
+      private class PickSingleSummary extends SummarizedCallable {
+        private MethodCall mc;
+        private string key;
+
+        PickSingleSummary() {
+          key = getKeyArgument(mc, 0) and
+          this = "Enumerable.pick(" + key + ")" and
+          mc.getMethodName() = "pick" and
+          mc.getNumberOfArguments() = 1
+        }
+
+        override MethodCall getACall() { result = mc }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self].Element[0].Element[" + key + "]" and
+          output = "ReturnValue" and
+          preservesValue = true
+        }
+      }
+
+      private class PickMultipleSummary extends SummarizedCallable {
+        private MethodCall mc;
+
+        PickMultipleSummary() {
+          mc.getMethodName() = "pick" and
+          mc.getNumberOfArguments() > 1 and
+          exists(int maxKey |
+            maxKey = max(int j | exists(getKeyArgument(mc, j))) and
+            this =
+              "Enumerable.pick(" +
+                concat(int i, string key |
+                  key = getKeyArgument(mc, i)
+                  or
+                  key = "_" and
+                  not exists(getKeyArgument(mc, i)) and
+                  i in [0 .. maxKey]
+                |
+                  key, "," order by i
+                ) + ")"
+          )
+        }
+
+        override MethodCall getACall() { result = mc }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          exists(string s, int i |
+            s = getKeyArgument(mc, i) and
+            input = "Argument[self].Element[0].Element[" + s + "]" and
+            output = "ReturnValue.Element[" + i + "]"
+          ) and
+          preservesValue = true
+        }
+      }
+
+      private class PluckSingleSummary extends SummarizedCallable {
+        private MethodCall mc;
+        private string key;
+
+        PluckSingleSummary() {
+          key = getKeyArgument(mc, 0) and
+          this = "Enumerable.pluck(" + key + ")" and
+          mc.getMethodName() = "pluck" and
+          mc.getNumberOfArguments() = 1
+        }
+
+        override MethodCall getACall() { result = mc }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self].Element[any].Element[" + key + "]" and
+          output = "ReturnValue.Element[any]" and
+          preservesValue = true
+        }
+      }
+
+      private class PluckMultipleSummary extends SummarizedCallable {
+        private MethodCall mc;
+
+        PluckMultipleSummary() {
+          mc.getMethodName() = "pluck" and
+          mc.getNumberOfArguments() > 1 and
+          exists(int maxKey |
+            maxKey = max(int j | exists(getKeyArgument(mc, j))) and
+            this =
+              "Enumerable.pluck(" +
+                concat(int i, string key |
+                  key = getKeyArgument(mc, i)
+                  or
+                  key = "_" and
+                  not exists(getKeyArgument(mc, i)) and
+                  i in [0 .. maxKey]
+                |
+                  key, "," order by i
+                ) + ")"
+          )
+        }
+
+        override MethodCall getACall() { result = mc }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          exists(string s, int i |
+            s = getKeyArgument(mc, i) and
+            input = "Argument[self].Element[any].Element[" + s + "]" and
+            output = "ReturnValue.Element[?].Element[" + i + "]"
+          ) and
+          preservesValue = true
+        }
+      }
+
+      private class SoleSummary extends SimpleSummarizedCallable {
+        SoleSummary() { this = "sole" }
+
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[self].Element[0]" and
+          output = "ReturnValue" and
+          preservesValue = true
+        }
+      }
     }
   }
 
@@ -254,45 +451,22 @@ module ActiveSupport {
   }
 
   /**
-   * Type summaries for extensions to the `Pathname` module.
+   * `ActiveSupport::ERB`
    */
-  private class PathnameTypeSummary extends ModelInput::TypeModelCsv {
-    override predicate row(string row) {
-      // package1;type1;package2;type2;path
-      // Pathname#existence : Pathname
-      row = ";Pathname;;Pathname;Method[existence].ReturnValue"
-    }
-  }
+  module Erb {
+    /**
+     * `ActiveSupport::ERB::Util`
+     */
+    module Util {
+      private class JsonEscapeSummary extends SimpleSummarizedCallable {
+        JsonEscapeSummary() { this = "json_escape" }
 
-  /** Taint flow summaries for extensions to the `Pathname` module. */
-  private class PathnameTaintSummary extends ModelInput::SummaryModelCsv {
-    override predicate row(string row) {
-      // Pathname#existence
-      row = ";Pathname;Method[existence];Argument[self];ReturnValue;taint"
-    }
-  }
-
-  /**
-   * `ActiveSupport::SafeBuffer` wraps a string, providing HTML-safe methods
-   * for concatenation.
-   * It is possible to insert tainted data into `SafeBuffer` that won't get
-   * sanitized, and this taint is then propagated via most of the methods.
-   */
-  private class SafeBufferSummary extends ModelInput::SummaryModelCsv {
-    // TODO: SafeBuffer also reponds to all String methods.
-    // Can we model this without repeating all the existing summaries we have
-    // for String?
-    override predicate row(string row) {
-      row =
-        [
-          // SafeBuffer.new(x) does not sanitize x
-          "activesupport;;Member[ActionView].Member[SafeBuffer].Method[new];Argument[0];ReturnValue;taint",
-          // SafeBuffer#safe_concat(x) does not sanitize x
-          "activesupport;;Member[ActionView].Member[SafeBuffer].Instance.Method[safe_concat];Argument[0];ReturnValue;taint",
-          "activesupport;;Member[ActionView].Member[SafeBuffer].Instance.Method[safe_concat];Argument[0];Argument[self];taint",
-          // These methods preserve taint in self
-          "activesupport;;Member[ActionView].Member[SafeBuffer].Instance.Method[concat,insert,prepend,to_s,to_param];Argument[self];ReturnValue;taint",
-        ]
+        override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+          input = "Argument[0]" and
+          output = "ReturnValue" and
+          preservesValue = false
+        }
+      }
     }
   }
 }

@@ -67,32 +67,35 @@ module SQL {
      */
     abstract class Range extends DataFlow::Node { }
 
+    private class DefaultQueryString extends Range {
+      DefaultQueryString() {
+        exists(DataFlow::ArgumentNode arg | sinkNode(arg, "sql-injection") |
+          not arg instanceof DataFlow::ImplicitVarargsSlice and
+          this = arg
+          or
+          arg instanceof DataFlow::ImplicitVarargsSlice and
+          this = arg.getCall().getAnImplicitVarargsArgument()
+        )
+      }
+    }
+
     /**
      * An argument to an API of the squirrel library that is directly interpreted as SQL without
      * taking syntactic structure into account.
      */
     private class SquirrelQueryString extends Range {
       SquirrelQueryString() {
-        exists(Function fn |
-          exists(string sq |
-            sq =
-              package([
-                  "github.com/Masterminds/squirrel", "gopkg.in/Masterminds/squirrel",
-                  "github.com/lann/squirrel"
-                ], "")
-          |
-            // first argument to `squirrel.Expr`
-            fn.hasQualifiedName(sq, "Expr")
-            or
-            // first argument to the `Prefix`, `Suffix` or `Where` method of one of the `*Builder` classes
-            exists(string builder | builder.matches("%Builder") |
-              fn.(Method).hasQualifiedName(sq, builder, "Prefix") or
-              fn.(Method).hasQualifiedName(sq, builder, "Suffix") or
-              fn.(Method).hasQualifiedName(sq, builder, "Where")
-            )
-          ) and
-          this = fn.getACall().getArgument(0) and
+        exists(string sq, Method m, string builder |
+          FlowExtensions::packageGrouping("squirrel", sq) and
+          builder = ["DeleteBuilder", "SelectBuilder", "UpdateBuilder"]
+        |
+          m.hasQualifiedName(sq, builder, "Where") and
+          this = m.getACall().getArgument(0)
+        ) and
+        (
           this.getType().getUnderlyingType() instanceof StringType
+          or
+          this.getType().getUnderlyingType().(SliceType).getElementType() instanceof StringType
         )
       }
     }
@@ -137,9 +140,25 @@ module SQL {
           f.hasQualifiedName(gopgorm(), "Q") and
           arg = 0
           or
-          exists(string tp, string m | f.(Method).hasQualifiedName(gopgorm(), tp, m) |
+          exists(string tp, string m | f.(Method).hasQualifiedName([gopgorm(), gopg()], tp, m) |
+            tp = ["DB", "Conn"] and
+            m = ["QueryContext", "QueryOneContext"] and
+            arg = 2
+            or
+            tp = ["DB", "Conn"] and
+            m = ["ExecContext", "ExecOneContext", "Query", "QueryOne"] and
+            arg = 1
+            or
+            tp = ["DB", "Conn"] and
+            m = ["Exec", "ExecOne", "Prepare"] and
+            arg = 0
+            or
             tp = "Query" and
-            m = ["ColumnExpr", "For", "Having", "Where", "WhereIn", "WhereInMulti", "WhereOr"] and
+            m =
+              [
+                "ColumnExpr", "For", "GroupExpr", "Having", "Join", "OrderExpr", "TableExpr",
+                "Where", "WhereIn", "WhereInMulti", "WhereOr"
+              ] and
             arg = 0
             or
             tp = "Query" and
@@ -150,56 +169,6 @@ module SQL {
           this = f.getACall().getArgument(arg)
         )
       }
-    }
-
-    /** A taint model for various methods on the struct `Formatter` of `go-pg/pg/orm`. */
-    private class PgOrmFormatterFunction extends TaintTracking::FunctionModel, Method {
-      FunctionInput i;
-      FunctionOutput o;
-
-      PgOrmFormatterFunction() {
-        exists(string m | this.hasQualifiedName(gopgorm(), "Formatter", m) |
-          // func (f Formatter) Append(dst []byte, src string, params ...interface{}) []byte
-          // func (f Formatter) AppendBytes(dst, src []byte, params ...interface{}) []byte
-          // func (f Formatter) FormatQuery(dst []byte, query string, params ...interface{}) []byte
-          (m = "Append" or m = "AppendBytes" or m = "FormatQuery") and
-          i.isParameter(1) and
-          (o.isParameter(0) or o.isResult())
-        )
-      }
-
-      override predicate hasTaintFlow(FunctionInput inp, FunctionOutput outp) {
-        inp = i and outp = o
-      }
-    }
-  }
-
-  /** A model for sinks of GORM. */
-  private class GormSink extends SQL::QueryString::Range {
-    GormSink() {
-      exists(Method meth, string package, string name |
-        meth.hasQualifiedName(package, "DB", name) and
-        this = meth.getACall().getArgument(0) and
-        package = Gorm::packagePath() and
-        name in [
-            "Where", "Raw", "Order", "Not", "Or", "Select", "Table", "Group", "Having", "Joins",
-            "Exec", "Distinct", "Pluck"
-          ]
-      )
-    }
-  }
-
-  /** A model for sinks of github.com/jmoiron/sqlx. */
-  private class SqlxSink extends SQL::QueryString::Range {
-    SqlxSink() {
-      exists(Method meth, string name, int n |
-        meth.hasQualifiedName(package("github.com/jmoiron/sqlx", ""), ["DB", "Tx"], name) and
-        this = meth.getACall().getArgument(n)
-      |
-        name = ["Select", "Get"] and n = 1
-        or
-        name = ["MustExec", "Queryx", "NamedExec", "NamedQuery"] and n = 0
-      )
     }
   }
 }
@@ -219,27 +188,25 @@ module Gorm {
  */
 module Xorm {
   /** Gets the package name for Xorm. */
-  string packagePath() { result = package(["xorm.io/xorm", "github.com/go-xorm/xorm"], "") }
+  string packagePath() { FlowExtensions::packageGrouping("xorm", result) }
 
   /** A model for sinks of XORM. */
   private class XormSink extends SQL::QueryString::Range {
     XormSink() {
-      exists(Method meth, string type, string name, int n |
+      exists(Method meth, string type, string name |
         meth.hasQualifiedName(Xorm::packagePath(), type, name) and
-        this = meth.getACall().getArgument(n) and
-        type = ["Engine", "Session"]
+        type = ["Engine", "Session"] and
+        name = ["Exec", "Query", "QueryInterface", "QueryString"]
       |
-        name =
-          [
-            "Query", "Exec", "QueryString", "QueryInterface", "SQL", "Where", "And", "Or", "Alias",
-            "NotIn", "In", "Select", "SetExpr", "OrderBy", "Having", "GroupBy"
-          ] and
-        n = 0
-        or
-        name = ["SumInt", "Sum", "Sums", "SumsInt"] and n = 1
-        or
-        name = "Join" and n = [0, 1, 2]
+        this = meth.getACall().getSyntacticArgument(0)
       )
     }
   }
 }
+
+/**
+ * DEPRECATED
+ *
+ * Provides classes for working with the [Bun](https://bun.uptrace.dev/) package.
+ */
+deprecated module Bun { }

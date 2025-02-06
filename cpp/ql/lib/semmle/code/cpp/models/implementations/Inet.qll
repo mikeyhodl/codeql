@@ -1,9 +1,10 @@
 import semmle.code.cpp.models.interfaces.Taint
 import semmle.code.cpp.models.interfaces.Alias
 import semmle.code.cpp.models.interfaces.ArrayFunction
+import semmle.code.cpp.models.interfaces.FlowSource
 
 private class InetNtoa extends TaintFunction {
-  InetNtoa() { hasGlobalName("inet_ntoa") }
+  InetNtoa() { this.hasGlobalName("inet_ntoa") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameter(0) and
@@ -12,12 +13,14 @@ private class InetNtoa extends TaintFunction {
 }
 
 private class InetAton extends TaintFunction, ArrayFunction {
-  InetAton() { hasGlobalName("inet_aton") }
+  InetAton() { this.hasGlobalName("inet_aton") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameterDeref(0) and
     output.isParameterDeref(1)
   }
+
+  override predicate isPartialWrite(FunctionOutput output) { output.isParameterDeref(1) }
 
   override predicate hasArrayInput(int bufParam) { bufParam = 0 }
 
@@ -32,7 +35,7 @@ private class InetAton extends TaintFunction, ArrayFunction {
 }
 
 private class InetAddr extends TaintFunction, ArrayFunction, AliasFunction {
-  InetAddr() { hasGlobalName("inet_addr") }
+  InetAddr() { this.hasGlobalName("inet_addr") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameterDeref(0) and
@@ -51,7 +54,7 @@ private class InetAddr extends TaintFunction, ArrayFunction, AliasFunction {
 }
 
 private class InetNetwork extends TaintFunction, ArrayFunction {
-  InetNetwork() { hasGlobalName("inet_network") }
+  InetNetwork() { this.hasGlobalName("inet_network") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameterDeref(0) and
@@ -64,7 +67,7 @@ private class InetNetwork extends TaintFunction, ArrayFunction {
 }
 
 private class InetMakeaddr extends TaintFunction {
-  InetMakeaddr() { hasGlobalName("inet_makeaddr") }
+  InetMakeaddr() { this.hasGlobalName("inet_makeaddr") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     (
@@ -76,7 +79,7 @@ private class InetMakeaddr extends TaintFunction {
 }
 
 private class InetLnaof extends TaintFunction {
-  InetLnaof() { hasGlobalName("inet_lnaof") }
+  InetLnaof() { this.hasGlobalName("inet_lnaof") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameter(0) and
@@ -85,7 +88,7 @@ private class InetLnaof extends TaintFunction {
 }
 
 private class InetNetof extends TaintFunction {
-  InetNetof() { hasGlobalName("inet_netof") }
+  InetNetof() { this.hasGlobalName("inet_netof") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameter(0) and
@@ -94,7 +97,7 @@ private class InetNetof extends TaintFunction {
 }
 
 private class InetPton extends TaintFunction, ArrayFunction {
-  InetPton() { hasGlobalName("inet_pton") }
+  InetPton() { this.hasGlobalName("inet_pton") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     (
@@ -114,7 +117,7 @@ private class InetPton extends TaintFunction, ArrayFunction {
 }
 
 private class Gethostbyname extends TaintFunction, ArrayFunction {
-  Gethostbyname() { hasGlobalName("gethostbyname") }
+  Gethostbyname() { this.hasGlobalName("gethostbyname") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     input.isParameterDeref(0) and
@@ -127,7 +130,7 @@ private class Gethostbyname extends TaintFunction, ArrayFunction {
 }
 
 private class Gethostbyaddr extends TaintFunction, ArrayFunction {
-  Gethostbyaddr() { hasGlobalName("gethostbyaddr") }
+  Gethostbyaddr() { this.hasGlobalName("gethostbyaddr") }
 
   override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
     (
@@ -141,4 +144,22 @@ private class Gethostbyaddr extends TaintFunction, ArrayFunction {
   override predicate hasArrayInput(int bufParam) { bufParam = 0 }
 
   override predicate hasArrayWithNullTerminator(int bufParam) { bufParam = 0 }
+}
+
+private class Getaddrinfo extends TaintFunction, ArrayFunction, RemoteFlowSourceFunction {
+  Getaddrinfo() { this.hasGlobalName("getaddrinfo") }
+
+  override predicate hasTaintFlow(FunctionInput input, FunctionOutput output) {
+    input.isParameterDeref([0 .. 2]) and
+    output.isParameterDeref(3)
+  }
+
+  override predicate hasArrayInput(int bufParam) { bufParam in [0, 1] }
+
+  override predicate hasArrayWithNullTerminator(int bufParam) { bufParam in [0, 1] }
+
+  override predicate hasRemoteFlowSource(FunctionOutput output, string description) {
+    output.isParameterDeref(3, 2) and
+    description = "address returned by " + this.getName()
+  }
 }

@@ -6,5 +6,5 @@
 import csharp
 
 from Interface i
-where i.getQualifiedName() = "Types.Interface"
+where i.hasFullyQualifiedName("Types", "Interface")
 select i

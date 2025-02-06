@@ -7,9 +7,7 @@ import java
 import semmle.code.java.Serializability
 import semmle.code.java.Reflection
 import semmle.code.java.dataflow.DataFlow
-private import semmle.code.java.dataflow.internal.DataFlowForSerializability
 import semmle.code.java.dataflow.FlowSteps
-private import semmle.code.java.dataflow.ExternalFlow
 
 /**
  * A `@com.fasterxml.jackson.annotation.JsonIgnore` annoation.
@@ -21,9 +19,6 @@ class JacksonJsonIgnoreAnnotation extends NonReflectiveAnnotation {
     )
   }
 }
-
-/** DEPRECATED: Alias for JacksonJsonIgnoreAnnotation */
-deprecated class JacksonJSONIgnoreAnnotation = JacksonJsonIgnoreAnnotation;
 
 /** A type whose values may be serialized using the Jackson JSON framework. */
 abstract class JacksonSerializableType extends Type { }
@@ -73,7 +68,7 @@ private class JacksonReadValueMethod extends Method, TaintPreservingCallable {
 /** A type whose values are explicitly serialized in a call to a Jackson method. */
 private class ExplicitlyWrittenJacksonSerializableType extends JacksonSerializableType {
   ExplicitlyWrittenJacksonSerializableType() {
-    exists(MethodAccess ma |
+    exists(MethodCall ma |
       // A call to a Jackson write method...
       ma.getMethod() instanceof JacksonWriteValueMethod and
       // ...where `this` is used in the final argument, indicating that this type will be serialized.
@@ -92,15 +87,11 @@ private class FieldReferencedJacksonSerializableType extends JacksonSerializable
 /** A type whose values may be deserialized by the Jackson JSON framework. */
 abstract class JacksonDeserializableType extends Type { }
 
-private class TypeLiteralToJacksonDatabindFlowConfiguration extends DataFlowForSerializability::Configuration {
-  TypeLiteralToJacksonDatabindFlowConfiguration() {
-    this = "TypeLiteralToJacksonDatabindFlowConfiguration"
-  }
+private module TypeLiteralToJacksonDatabindFlowConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node source) { source.asExpr() instanceof TypeLiteral }
 
-  override predicate isSource(DataFlow::Node source) { source.asExpr() instanceof TypeLiteral }
-
-  override predicate isSink(DataFlow::Node sink) {
-    exists(MethodAccess ma, Method m, int i |
+  predicate isSink(DataFlow::Node sink) {
+    exists(MethodCall ma, Method m, int i |
       ma.getArgument(i) = sink.asExpr() and
       m = ma.getMethod() and
       m.getParameterType(i) instanceof TypeClass and
@@ -111,18 +102,21 @@ private class TypeLiteralToJacksonDatabindFlowConfiguration extends DataFlowForS
       )
     )
   }
+}
 
-  TypeLiteral getSourceWithFlowToJacksonDatabind() { this.hasFlow(DataFlow::exprNode(result), _) }
+private module TypeLiteralToJacksonDatabindFlow =
+  DataFlow::Global<TypeLiteralToJacksonDatabindFlowConfig>;
+
+private TypeLiteral getSourceWithFlowToJacksonDatabind() {
+  TypeLiteralToJacksonDatabindFlow::flow(DataFlow::exprNode(result), _)
 }
 
 /** A type whose values are explicitly deserialized in a call to a Jackson method. */
 private class ExplicitlyReadJacksonDeserializableType extends JacksonDeserializableType {
   ExplicitlyReadJacksonDeserializableType() {
-    exists(TypeLiteralToJacksonDatabindFlowConfiguration conf |
-      usesType(conf.getSourceWithFlowToJacksonDatabind().getReferencedType(), this)
-    )
+    usesType(getSourceWithFlowToJacksonDatabind().getReferencedType(), this)
     or
-    exists(MethodAccess ma |
+    exists(MethodCall ma |
       // A call to a Jackson read method...
       ma.getMethod() instanceof JacksonReadValueMethod and
       // ...where `this` is used in the final argument, indicating that this type will be deserialized.
@@ -183,7 +177,7 @@ private class JacksonDeserializedTaintStep extends AdditionalTaintStep {
  * This informs Jackson to treat the annotations on the second class argument as if they were on
  * the first class argument. This allows adding annotations to library classes, for example.
  */
-class JacksonAddMixinCall extends MethodAccess {
+class JacksonAddMixinCall extends MethodCall {
   JacksonAddMixinCall() {
     exists(Method m |
       m = this.getMethod() and
@@ -279,20 +273,5 @@ class JacksonMixedInCallable extends Callable {
         // Signatures should match
         result.getSignature() = this.getSignature()
     )
-  }
-}
-
-private class JacksonModel extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "com.fasterxml.jackson.databind;ObjectMapper;true;valueToTree;;;Argument[0];ReturnValue;taint;manual",
-        "com.fasterxml.jackson.databind;ObjectMapper;true;valueToTree;;;Argument[0].MapValue;ReturnValue;taint;manual",
-        "com.fasterxml.jackson.databind;ObjectMapper;true;valueToTree;;;Argument[0].MapValue.Element;ReturnValue;taint;manual",
-        "com.fasterxml.jackson.databind;ObjectMapper;true;convertValue;;;Argument[0];ReturnValue;taint;manual",
-        "com.fasterxml.jackson.databind;ObjectMapper;false;createParser;;;Argument[0];ReturnValue;taint;manual",
-        "com.fasterxml.jackson.databind;ObjectReader;false;createParser;;;Argument[0];ReturnValue;taint;manual",
-        "com.fasterxml.jackson.core;JsonFactory;false;createParser;;;Argument[0];ReturnValue;taint;manual"
-      ]
   }
 }

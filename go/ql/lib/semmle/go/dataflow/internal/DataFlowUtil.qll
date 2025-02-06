@@ -2,11 +2,12 @@
  * Provides Go-specific definitions for use in the data flow library.
  */
 
-import go
-import semmle.go.dataflow.FunctionInputsAndOutputs
+private import go
+private import semmle.go.dataflow.FunctionInputsAndOutputs
 private import semmle.go.dataflow.ExternalFlow
 private import DataFlowPrivate
 private import FlowSummaryImpl as FlowSummaryImpl
+private import codeql.util.Unit
 import DataFlowNodes::Public
 
 /**
@@ -48,6 +49,18 @@ abstract class FunctionModel extends Function {
   predicate flowStep(DataFlow::Node pred, DataFlow::Node succ) {
     this.flowStepForCall(pred, succ, _)
   }
+}
+
+/**
+ * A unit class for adding nodes that should implicitly read from all nested content.
+ *
+ * For example, this might be appropriate for the argument to a method that serializes a struct.
+ */
+class ImplicitFieldReadNode extends Unit {
+  /**
+   * Holds if the node `n` should implicitly read from all nested content in a taint-tracking context.
+   */
+  abstract predicate shouldImplicitlyReadAllFields(DataFlow::Node n);
 }
 
 /**
@@ -104,11 +117,11 @@ predicate isReturnedWithError(Node node) {
  * (intra-procedural) step.
  */
 predicate localFlowStep(Node nodeFrom, Node nodeTo) {
-  simpleLocalFlowStep(nodeFrom, nodeTo)
+  simpleLocalFlowStep(nodeFrom, nodeTo, _)
   or
   // Simple flow through library code is included in the exposed local
   // step relation, even though flow is technically inter-procedural
-  FlowSummaryImpl::Private::Steps::summaryThroughStep(nodeFrom, nodeTo, true)
+  FlowSummaryImpl::Private::Steps::summaryThroughStepValue(nodeFrom, nodeTo, _)
 }
 
 /**
@@ -118,19 +131,23 @@ predicate localFlowStep(Node nodeFrom, Node nodeTo) {
  * data flow. It may have less flow than the `localFlowStep` predicate.
  */
 cached
-predicate simpleLocalFlowStep(Node nodeFrom, Node nodeTo) {
-  basicLocalFlowStep(nodeFrom, nodeTo)
+predicate simpleLocalFlowStep(Node nodeFrom, Node nodeTo, string model) {
+  basicLocalFlowStep(nodeFrom, nodeTo) and
+  model = ""
   or
   // step through function model
-  any(FunctionModel m).flowStep(nodeFrom, nodeTo)
+  any(FunctionModel m).flowStep(nodeFrom, nodeTo) and
+  model = "FunctionModel"
   or
-  FlowSummaryImpl::Private::Steps::summaryLocalStep(nodeFrom, nodeTo, true)
+  FlowSummaryImpl::Private::Steps::summaryLocalStep(nodeFrom.(FlowSummaryNode).getSummaryNode(),
+    nodeTo.(FlowSummaryNode).getSummaryNode(), true, model)
 }
 
 /**
  * Holds if data flows from `source` to `sink` in zero or more local
  * (intra-procedural) steps.
  */
+pragma[inline]
 predicate localFlow(Node source, Node sink) { localFlowStep*(source, sink) }
 
 private newtype TContent =
@@ -148,7 +165,7 @@ private newtype TContent =
  */
 class Content extends TContent {
   /** Gets the type of the contained data for the purpose of type pruning. */
-  DataFlowType getType() { result instanceof EmptyInterfaceType }
+  DataFlowType getType() { any() }
 
   /** Gets a textual representation of this element. */
   abstract string toString();
@@ -160,9 +177,16 @@ class Content extends TContent {
    * For more information, see
    * [Locations](https://codeql.github.com/docs/writing-codeql-queries/providing-locations-in-codeql-queries/).
    */
-  predicate hasLocationInfo(string path, int sl, int sc, int el, int ec) {
-    path = "" and sl = 0 and sc = 0 and el = 0 and ec = 0
+  predicate hasLocationInfo(
+    string filepath, int startline, int startcolumn, int endline, int endcolumn
+  ) {
+    filepath = "" and startline = 0 and startcolumn = 0 and endline = 0 and endcolumn = 0
   }
+
+  /**
+   * Gets the `ContentSet` contaning only this content.
+   */
+  ContentSet asContentSet() { result.asOneContent() = this }
 }
 
 /** A reference through a field. */
@@ -174,7 +198,7 @@ class FieldContent extends Content, TFieldContent {
   /** Gets the field associated with this `FieldContent`. */
   Field getField() { result = f }
 
-  override DataFlowType getType() { result = f.getType() }
+  override DataFlowType getType() { any() }
 
   override string toString() { result = f.toString() }
 
@@ -202,7 +226,7 @@ class PointerContent extends Content, TPointerContent {
   /** Gets the pointer type that containers with this content must have. */
   PointerType getPointerType() { result = t }
 
-  override DataFlowType getType() { result = t.getBaseType() }
+  override DataFlowType getType() { any() }
 
   override string toString() { result = "pointer" }
 }
@@ -225,9 +249,70 @@ class SyntheticFieldContent extends Content, TSyntheticFieldContent {
   /** Gets the field associated with this `SyntheticFieldContent`. */
   SyntheticField getField() { result = s }
 
-  override DataFlowType getType() { result = s.getType() }
+  override DataFlowType getType() { any() }
 
   override string toString() { result = s.toString() }
+}
+
+private newtype TContentSet =
+  TOneContent(Content c) or
+  TAllContent()
+
+/**
+ * An entity that represents a set of `Content`s.
+ *
+ * The set may be interpreted differently depending on whether it is
+ * stored into (`getAStoreContent`) or read from (`getAReadContent`).
+ */
+class ContentSet instanceof TContentSet {
+  /** Gets a content that may be stored into when storing into this set. */
+  Content getAStoreContent() { this = TOneContent(result) }
+
+  /** Gets a content that may be read from when reading from this set. */
+  Content getAReadContent() {
+    this = TOneContent(result)
+    or
+    this = TAllContent() and exists(result)
+  }
+
+  /** Gets a textual representation of this content set. */
+  string toString() {
+    exists(Content c | this = TOneContent(c) | result = c.toString())
+    or
+    this = TAllContent() and result = "all content"
+  }
+
+  /**
+   * Holds if this element is at the specified location.
+   * The location spans column `startcolumn` of line `startline` to
+   * column `endcolumn` of line `endline` in file `filepath`.
+   * For more information, see
+   * [Locations](https://codeql.github.com/docs/writing-codeql-queries/providing-locations-in-codeql-queries/).
+   */
+  predicate hasLocationInfo(
+    string filepath, int startline, int startcolumn, int endline, int endcolumn
+  ) {
+    exists(Content c | this = TOneContent(c) |
+      c.hasLocationInfo(filepath, startline, startcolumn, endline, endcolumn)
+    )
+    or
+    this = TAllContent() and
+    filepath = "" and
+    startline = 0 and
+    startcolumn = 0 and
+    endline = 0 and
+    endcolumn = 0
+  }
+
+  /**
+   * If this is a singleton content set, returns the content.
+   */
+  Content asOneContent() { this = TOneContent(result) }
+
+  /**
+   * Holds if this is a universal content set.
+   */
+  predicate isUniversalContent() { this = TAllContent() }
 }
 
 /**
@@ -248,11 +333,11 @@ signature predicate guardChecksSig(Node g, Expr e, boolean branch);
 module BarrierGuard<guardChecksSig/3 guardChecks> {
   /** Gets a node that is safely guarded by the given guard check. */
   Node getABarrierNode() {
-    exists(Node g, ControlFlow::ConditionGuardNode guard, Node nd, SsaWithFields var |
-      result = var.getAUse()
+    exists(ControlFlow::ConditionGuardNode guard, SsaWithFields var |
+      result = pragma[only_bind_out](var).getAUse()
     |
-      guards(g, guard, nd, var) and
-      guard.dominates(result.getBasicBlock())
+      guards(_, guard, _, var) and
+      pragma[only_bind_out](guard).dominates(result.getBasicBlock())
     )
   }
 
@@ -260,10 +345,8 @@ module BarrierGuard<guardChecksSig/3 guardChecks> {
    * Gets a node that is safely guarded by the given guard check.
    */
   Node getABarrierNodeForGuard(Node guardCheck) {
-    exists(ControlFlow::ConditionGuardNode guard, Node nd, SsaWithFields var |
-      result = var.getAUse()
-    |
-      guards(guardCheck, guard, nd, var) and
+    exists(ControlFlow::ConditionGuardNode guard, SsaWithFields var | result = var.getAUse() |
+      guards(guardCheck, guard, _, var) and
       guard.dominates(result.getBasicBlock())
     )
   }
@@ -289,11 +372,8 @@ module BarrierGuard<guardChecksSig/3 guardChecks> {
       guard.ensures(g, branch)
     )
     or
-    exists(
-      Function f, FunctionInput inp, FunctionOutput outp, DataFlow::Property p, CallNode c,
-      Node resNode, Node check, boolean outcome
-    |
-      guardingCall(g, f, inp, outp, p, c, nd, resNode) and
+    exists(DataFlow::Property p, Node resNode, Node check, boolean outcome |
+      guardingCall(g, _, _, _, p, _, nd, resNode) and
       p.checkOn(check, outcome, resNode) and
       guard.ensures(pragma[only_bind_into](check), outcome)
     )
@@ -310,6 +390,21 @@ module BarrierGuard<guardChecksSig/3 guardChecks> {
     localFlow(pragma[only_bind_out](outp.getNode(c)), resNode)
   }
 
+  private predicate onlyPossibleReturnSatisfyingProperty(
+    FuncDecl fd, FunctionOutput outp, Node ret, DataFlow::Property p
+  ) {
+    exists(boolean b |
+      onlyPossibleReturnOfBool(fd, outp, ret, b) and
+      p.isBoolean(b)
+    )
+    or
+    onlyPossibleReturnOfNonNil(fd, outp, ret) and
+    p.isNonNil()
+    or
+    onlyPossibleReturnOfNil(fd, outp, ret) and
+    p.isNil()
+  }
+
   /**
    * Holds if whenever `p` holds of output `outp` of function `f`, this node
    * is known to validate the input `inp` of `f`.
@@ -324,24 +419,14 @@ module BarrierGuard<guardChecksSig/3 guardChecks> {
   ) {
     exists(FuncDecl fd, Node arg, Node ret |
       fd.getFunction() = f and
-      localFlow(inp.getExitNode(fd), arg) and
-      ret = outp.getEntryNode(fd) and
+      localFlow(inp.getExitNode(fd), pragma[only_bind_out](arg)) and
       (
         // Case: a function like "if someBarrierGuard(arg) { return true } else { return false }"
         exists(ControlFlow::ConditionGuardNode guard |
-          guards(g, guard, arg) and
-          guard.dominates(ret.getBasicBlock())
+          guards(g, pragma[only_bind_out](guard), arg) and
+          guard.dominates(pragma[only_bind_out](ret).getBasicBlock())
         |
-          exists(boolean b |
-            onlyPossibleReturnOfBool(fd, outp, ret, b) and
-            p.isBoolean(b)
-          )
-          or
-          onlyPossibleReturnOfNonNil(fd, outp, ret) and
-          p.isNonNil()
-          or
-          onlyPossibleReturnOfNil(fd, outp, ret) and
-          p.isNil()
+          onlyPossibleReturnSatisfyingProperty(fd, outp, ret, p)
         )
         or
         // Case: a function like "return someBarrierGuard(arg)"
@@ -378,34 +463,6 @@ module BarrierGuard<guardChecksSig/3 guardChecks> {
       )
     )
   }
-}
-
-/**
- * DEPRECATED: Use `BarrierGuard` module instead.
- *
- * A guard that validates some expression.
- *
- * To use this in a configuration, extend the class and provide a
- * characteristic predicate precisely specifying the guard, and override
- * `checks` to specify what is being validated and in which branch.
- *
- * When using a data-flow or taint-flow configuration `cfg`, it is important
- * that any classes extending BarrierGuard in scope which are not used in `cfg`
- * are disjoint from any classes extending BarrierGuard in scope which are used
- * in `cfg`.
- */
-abstract deprecated class BarrierGuard extends Node {
-  /** Holds if this guard validates `e` upon evaluating to `branch`. */
-  abstract predicate checks(Expr e, boolean branch);
-
-  /** Gets a node guarded by this guard. */
-  final Node getAGuardedNode() {
-    result = BarrierGuard<barrierGuardChecks/3>::getABarrierNodeForGuard(this)
-  }
-}
-
-deprecated private predicate barrierGuardChecks(Node g, Expr e, boolean branch) {
-  g.(BarrierGuard).checks(e, branch)
 }
 
 DataFlow::Node getUniqueOutputNode(FuncDecl fd, FunctionOutput outp) {

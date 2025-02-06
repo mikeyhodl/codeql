@@ -13,9 +13,6 @@ class SslClass extends RefType {
   }
 }
 
-/** DEPRECATED: Alias for SslClass */
-deprecated class SSLClass = SslClass;
-
 class X509TrustManager extends RefType {
   X509TrustManager() { this.hasQualifiedName("javax.net.ssl", "X509TrustManager") }
 }
@@ -25,54 +22,33 @@ class HttpsUrlConnection extends RefType {
   HttpsUrlConnection() { this.hasQualifiedName("javax.net.ssl", "HttpsURLConnection") }
 }
 
-/** DEPRECATED: Alias for HttpsUrlConnection */
-deprecated class HttpsURLConnection = HttpsUrlConnection;
-
 class SslSocketFactory extends RefType {
   SslSocketFactory() { this.hasQualifiedName("javax.net.ssl", "SSLSocketFactory") }
 }
 
-/** DEPRECATED: Alias for SslSocketFactory */
-deprecated class SSLSocketFactory = SslSocketFactory;
-
 class SslContext extends RefType {
   SslContext() { this.hasQualifiedName("javax.net.ssl", "SSLContext") }
 }
-
-/** DEPRECATED: Alias for SslContext */
-deprecated class SSLContext = SslContext;
 
 /** The `javax.net.ssl.SslSession` class. */
 class SslSession extends RefType {
   SslSession() { this.hasQualifiedName("javax.net.ssl", "SSLSession") }
 }
 
-/** DEPRECATED: Alias for SslSession */
-deprecated class SSLSession = SslSession;
-
 /** The `javax.net.ssl.SslEngine` class. */
 class SslEngine extends RefType {
   SslEngine() { this.hasQualifiedName("javax.net.ssl", "SSLEngine") }
 }
-
-/** DEPRECATED: Alias for SslEngine */
-deprecated class SSLEngine = SslEngine;
 
 /** The `javax.net.ssl.SslSocket` class. */
 class SslSocket extends RefType {
   SslSocket() { this.hasQualifiedName("javax.net.ssl", "SSLSocket") }
 }
 
-/** DEPRECATED: Alias for SslSocket */
-deprecated class SSLSocket = SslSocket;
-
 /** The `javax.net.ssl.SslParameters` class. */
 class SslParameters extends RefType {
   SslParameters() { this.hasQualifiedName("javax.net.ssl", "SSLParameters") }
 }
-
-/** DEPRECATED: Alias for SslParameters */
-deprecated class SSLParameters = SslParameters;
 
 class HostnameVerifier extends RefType {
   HostnameVerifier() { this.hasQualifiedName("javax.net.ssl", "HostnameVerifier") }
@@ -86,6 +62,22 @@ class KeyGenerator extends RefType {
 /** The Java class `java.security.KeyPairGenerator`. */
 class KeyPairGenerator extends RefType {
   KeyPairGenerator() { this.hasQualifiedName("java.security", "KeyPairGenerator") }
+}
+
+/** The `init` method declared in `javax.crypto.KeyGenerator`. */
+class KeyGeneratorInitMethod extends Method {
+  KeyGeneratorInitMethod() {
+    this.getDeclaringType() instanceof KeyGenerator and
+    this.hasName("init")
+  }
+}
+
+/** The `initialize` method declared in `java.security.KeyPairGenerator`. */
+class KeyPairGeneratorInitMethod extends Method {
+  KeyPairGeneratorInitMethod() {
+    this.getDeclaringType() instanceof KeyPairGenerator and
+    this.hasName("initialize")
+  }
 }
 
 /** The `verify` method of the class `javax.net.ssl.HostnameVerifier`. */
@@ -127,9 +119,18 @@ class CreateSslEngineMethod extends Method {
   }
 }
 
+/** The `setConnectionFactory` method of the class `javax.net.ssl.HttpsURLConnection`. */
 class SetConnectionFactoryMethod extends Method {
   SetConnectionFactoryMethod() {
     this.hasName("setSSLSocketFactory") and
+    this.getDeclaringType().getAnAncestor() instanceof HttpsUrlConnection
+  }
+}
+
+/** The `setDefaultConnectionFactory` method of the class `javax.net.ssl.HttpsURLConnection`. */
+class SetDefaultConnectionFactoryMethod extends Method {
+  SetDefaultConnectionFactoryMethod() {
+    this.hasName("setDefaultSSLSocketFactory") and
     this.getDeclaringType().getAnAncestor() instanceof HttpsUrlConnection
   }
 }
@@ -197,19 +198,32 @@ private string algorithmRegex(string algorithmString) {
 }
 
 /**
- * Gets the name of an algorithm that is known to be insecure.
+ * Holds if `name` is the name of an algorithm that is known to be insecure and
+ * `reason` explains why it is insecure.
  */
-string getAnInsecureAlgorithmName() {
-  result =
-    [
-      "DES", "RC2", "RC4", "RC5",
-      // ARCFOUR is a variant of RC4
-      "ARCFOUR",
-      // Encryption mode ECB like AES/ECB/NoPadding is vulnerable to replay and other attacks
-      "ECB",
-      // CBC mode of operation with PKCS#5 or PKCS#7 padding is vulnerable to padding oracle attacks
-      "AES/CBC/PKCS[57]Padding"
-    ]
+predicate insecureAlgorithm(string name, string reason) {
+  name = "DES" and
+  reason =
+    "It has a short key length of 56 bits, making it vulnerable to brute-force attacks. Consider using AES instead."
+  or
+  name = "RC2" and
+  reason = "It is vulnerable to related-key attacks. Consider using AES instead."
+  or
+  // ARCFOUR is a variant of RC4
+  name = ["RC4", "ARCFOUR"] and
+  reason =
+    "It has multiple vulnerabilities, including biases in its output and susceptibility to several attacks. Consider using AES instead."
+  or
+  name = "RC5" and
+  reason = "It is vulnerable to differential and related-key attacks. Consider using AES instead."
+  or
+  name = "ECB" and
+  reason =
+    "ECB mode, as in AES/ECB/NoPadding for example, is vulnerable to replay and other attacks. Consider using GCM instead."
+  or
+  name = "AES/CBC/PKCS[57]Padding" and
+  reason =
+    "CBC mode with PKCS#5 or PKCS#7 padding is vulnerable to padding oracle attacks. Consider using GCM instead."
 }
 
 /**
@@ -221,25 +235,18 @@ string getAnInsecureHashAlgorithmName() {
   result = "MD5"
 }
 
-private string rankedInsecureAlgorithm(int i) {
-  // In this case we know these are being used for encryption, so we want to match
-  // weak hash algorithms too.
-  result =
-    rank[i](string s | s = getAnInsecureAlgorithmName() or s = getAnInsecureHashAlgorithmName())
-}
-
-private string insecureAlgorithmString(int i) {
-  i = 1 and result = rankedInsecureAlgorithm(i)
-  or
-  result = rankedInsecureAlgorithm(i) + "|" + insecureAlgorithmString(i - 1)
-}
-
 /**
  * Gets the regular expression used for matching strings that look like they
  * contain an algorithm that is known to be insecure.
  */
 string getInsecureAlgorithmRegex() {
-  result = algorithmRegex(insecureAlgorithmString(max(int i | exists(rankedInsecureAlgorithm(i)))))
+  result = algorithmRegex(concat(string name | insecureAlgorithm(name, _) | name, "|"))
+}
+
+/** Gets the reason why `input` is an insecure algorithm, if any. */
+bindingset[input]
+string getInsecureAlgorithmReason(string input) {
+  exists(string name | insecureAlgorithm(name, result) | input.regexpMatch(algorithmRegex(name)))
 }
 
 /**
@@ -248,8 +255,8 @@ string getInsecureAlgorithmRegex() {
 string getASecureAlgorithmName() {
   result =
     [
-      "RSA", "SHA256", "SHA512", "CCM", "GCM", "AES(?![^a-zA-Z](ECB|CBC/PKCS[57]Padding))",
-      "Blowfish", "ECIES"
+      "RSA", "SHA-?(256|384|512)", "CCM", "GCM", "AES(?![^a-zA-Z](ECB|CBC/PKCS[57]Padding))",
+      "Blowfish", "ECIES", "SHA3-(256|384|512)"
     ]
 }
 
@@ -274,9 +281,7 @@ string getSecureAlgorithmRegex() {
  * algorithm. For example, methods returning ciphers, decryption methods,
  * constructors of cipher classes, etc.
  */
-abstract class CryptoAlgoSpec extends Top {
-  CryptoAlgoSpec() { this instanceof Call }
-
+abstract class CryptoAlgoSpec extends Top instanceof Call {
   abstract Expr getAlgoSpec();
 }
 
@@ -285,18 +290,17 @@ abstract class JavaxCryptoAlgoSpec extends CryptoAlgoSpec { }
 class JavaxCryptoCipher extends JavaxCryptoAlgoSpec {
   JavaxCryptoCipher() {
     exists(Method m | m.getAReference() = this |
-      m.getDeclaringType().getQualifiedName() = "javax.crypto.Cipher" and
-      m.getName() = "getInstance"
+      m.hasQualifiedName("javax.crypto", "Cipher", "getInstance")
     )
   }
 
-  override Expr getAlgoSpec() { result = this.(MethodAccess).getArgument(0) }
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
 }
 
 class JavaxCryptoSecretKey extends JavaxCryptoAlgoSpec {
   JavaxCryptoSecretKey() {
     exists(Constructor c | c.getAReference() = this |
-      c.getDeclaringType().getQualifiedName() = "javax.crypto.spec.SecretKeySpec"
+      c.getDeclaringType().hasQualifiedName("javax.crypto.spec", "SecretKeySpec")
     )
   }
 
@@ -315,29 +319,27 @@ class JavaxCryptoKeyGenerator extends JavaxCryptoAlgoSpec {
     )
   }
 
-  override Expr getAlgoSpec() { result = this.(MethodAccess).getArgument(0) }
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
 }
 
 class JavaxCryptoKeyAgreement extends JavaxCryptoAlgoSpec {
   JavaxCryptoKeyAgreement() {
     exists(Method m | m.getAReference() = this |
-      m.getDeclaringType().getQualifiedName() = "javax.crypto.KeyAgreement" and
-      m.getName() = "getInstance"
+      m.hasQualifiedName("javax.crypto", "KeyAgreement", "getInstance")
     )
   }
 
-  override Expr getAlgoSpec() { result = this.(MethodAccess).getArgument(0) }
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
 }
 
 class JavaxCryptoKeyFactory extends JavaxCryptoAlgoSpec {
   JavaxCryptoKeyFactory() {
     exists(Method m | m.getAReference() = this |
-      m.getDeclaringType().getQualifiedName() = "javax.crypto.SecretKeyFactory" and
-      m.getName() = "getInstance"
+      m.hasQualifiedName("javax.crypto", "SecretKeyFactory", "getInstance")
     )
   }
 
-  override Expr getAlgoSpec() { result = this.(MethodAccess).getArgument(0) }
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
 }
 
 abstract class JavaSecurityAlgoSpec extends CryptoAlgoSpec { }
@@ -349,8 +351,7 @@ class JavaSecurityMessageDigest extends JavaSecurityAlgoSpec {
     )
     or
     exists(Method m | m.getAReference() = this |
-      m.getDeclaringType().hasQualifiedName("java.security", "MessageDigest") and
-      m.getName() = "getInstance"
+      m.hasQualifiedName("java.security", "MessageDigest", "getInstance")
     )
   }
 
@@ -360,15 +361,15 @@ class JavaSecurityMessageDigest extends JavaSecurityAlgoSpec {
 class JavaSecuritySignature extends JavaSecurityAlgoSpec {
   JavaSecuritySignature() {
     exists(Constructor c | c.getAReference() = this |
-      c.getDeclaringType().getQualifiedName() = "java.security.Signature"
+      c.getDeclaringType().hasQualifiedName("java.security", "Signature")
     )
   }
 
   override Expr getAlgoSpec() { result = this.(ConstructorCall).getArgument(0) }
 }
 
-/** A method call to the Java class `java.security.KeyPairGenerator`. */
-class JavaSecurityKeyPairGenerator extends JavaxCryptoAlgoSpec {
+/** A call to the `getInstance` method declared in `java.security.KeyPairGenerator`. */
+class JavaSecurityKeyPairGenerator extends JavaSecurityAlgoSpec {
   JavaSecurityKeyPairGenerator() {
     exists(Method m | m.getAReference() = this |
       m.getDeclaringType() instanceof KeyPairGenerator and
@@ -376,5 +377,55 @@ class JavaSecurityKeyPairGenerator extends JavaxCryptoAlgoSpec {
     )
   }
 
-  override Expr getAlgoSpec() { result = this.(MethodAccess).getArgument(0) }
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
+}
+
+/** The Java class `java.security.AlgorithmParameterGenerator`. */
+class AlgorithmParameterGenerator extends RefType {
+  AlgorithmParameterGenerator() {
+    this.hasQualifiedName("java.security", "AlgorithmParameterGenerator")
+  }
+}
+
+/** The `init` method declared in `java.security.AlgorithmParameterGenerator`. */
+class AlgoParamGeneratorInitMethod extends Method {
+  AlgoParamGeneratorInitMethod() {
+    this.getDeclaringType() instanceof AlgorithmParameterGenerator and
+    this.hasName("init")
+  }
+}
+
+/** A call to the `getInstance` method declared in `java.security.AlgorithmParameterGenerator`. */
+class JavaSecurityAlgoParamGenerator extends JavaSecurityAlgoSpec {
+  JavaSecurityAlgoParamGenerator() {
+    exists(Method m | m.getAReference() = this |
+      m.getDeclaringType() instanceof AlgorithmParameterGenerator and
+      m.getName() = "getInstance"
+    )
+  }
+
+  override Expr getAlgoSpec() { result = this.(MethodCall).getArgument(0) }
+}
+
+/** An implementation of the `java.security.spec.AlgorithmParameterSpec` interface. */
+abstract class AlgorithmParameterSpec extends RefType { }
+
+/** The Java class `java.security.spec.ECGenParameterSpec`. */
+class EcGenParameterSpec extends AlgorithmParameterSpec {
+  EcGenParameterSpec() { this.hasQualifiedName("java.security.spec", "ECGenParameterSpec") }
+}
+
+/** The Java class `java.security.spec.RSAKeyGenParameterSpec`. */
+class RsaKeyGenParameterSpec extends AlgorithmParameterSpec {
+  RsaKeyGenParameterSpec() { this.hasQualifiedName("java.security.spec", "RSAKeyGenParameterSpec") }
+}
+
+/** The Java class `java.security.spec.DSAGenParameterSpec`. */
+class DsaGenParameterSpec extends AlgorithmParameterSpec {
+  DsaGenParameterSpec() { this.hasQualifiedName("java.security.spec", "DSAGenParameterSpec") }
+}
+
+/** The Java class `javax.crypto.spec.DHGenParameterSpec`. */
+class DhGenParameterSpec extends AlgorithmParameterSpec {
+  DhGenParameterSpec() { this.hasQualifiedName("javax.crypto.spec", "DHGenParameterSpec") }
 }

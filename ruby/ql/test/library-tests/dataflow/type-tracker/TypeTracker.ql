@@ -1,6 +1,6 @@
 import codeql.ruby.AST
 import codeql.ruby.DataFlow
-import codeql.ruby.typetracking.TypeTracker
+import codeql.ruby.typetracking.TypeTracking
 
 class LocalSourceNode extends DataFlow::LocalSourceNode {
   LocalSourceNode() { this.getLocation().getFile().getExtension() = "rb" }
@@ -22,7 +22,7 @@ query predicate trackEnd(LocalSourceNode src, DataFlow::Node dst) {
 
 predicate backtrack(LocalSourceNode sink, TypeBackTracker t, LocalSourceNode src) {
   t.start() and
-  sink = src
+  sink.getALocalSource() = src
   or
   exists(TypeBackTracker t2, LocalSourceNode mid |
     backtrack(sink, t2, mid) and

@@ -13,31 +13,10 @@
 
 import java
 import semmle.code.java.frameworks.Servlets
-import semmle.code.java.dataflow.DataFlow
+import semmle.code.java.security.InsecureCookieQuery
 
-predicate isSafeSecureCookieSetting(Expr e) {
-  e.(CompileTimeConstantExpr).getBooleanValue() = true
-  or
-  exists(Method isSecure |
-    isSecure.getName() = "isSecure" and
-    isSecure.getDeclaringType().getASourceSupertype*() instanceof ServletRequest
-  |
-    e.(MethodAccess).getMethod() = isSecure
-  )
-}
-
-from MethodAccess add
+from MethodCall add
 where
   add.getMethod() instanceof ResponseAddCookieMethod and
-  not exists(Variable cookie, MethodAccess m |
-    add.getArgument(0) = cookie.getAnAccess() and
-    m.getMethod().getName() = "setSecure" and
-    forex(DataFlow::Node argSource |
-      DataFlow::localFlow(argSource, DataFlow::exprNode(m.getArgument(0))) and
-      not DataFlow::localFlowStep(_, argSource)
-    |
-      isSafeSecureCookieSetting(argSource.asExpr())
-    ) and
-    m.getQualifier() = cookie.getAnAccess()
-  )
+  not SecureCookieFlow::flowToExpr(add.getArgument(0))
 select add, "Cookie is added to response without the 'secure' flag being set."

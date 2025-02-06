@@ -12,38 +12,6 @@ import semmle.code.cpp.Function
 import semmle.code.cpp.models.Models
 
 /**
- * An allocation function such as `malloc`.
- */
-abstract class AllocationFunction extends Function {
-  /**
-   * Gets the index of the argument for the allocation size, if any. The actual
-   * allocation size is the value of this argument multiplied by the result of
-   * `getSizeMult()`, in bytes.
-   */
-  int getSizeArg() { none() }
-
-  /**
-   * Gets the index of an argument that multiplies the allocation size given by
-   * `getSizeArg`, if any.
-   */
-  int getSizeMult() { none() }
-
-  /**
-   * Gets the index of the input pointer argument to be reallocated, if this
-   * is a `realloc` function.
-   */
-  int getReallocPtrArg() { none() }
-
-  /**
-   * Whether or not this allocation requires a corresponding deallocation of
-   * some sort (most do, but `alloca` for example does not).  If it is unclear,
-   * we default to no (for example a placement `new` allocation may or may not
-   * require a corresponding `delete`).
-   */
-  predicate requiresDealloc() { any() }
-}
-
-/**
  * An allocation expression such as call to `malloc` or a `new` expression.
  */
 abstract class AllocationExpr extends Expr {
@@ -87,13 +55,56 @@ abstract class AllocationExpr extends Expr {
 }
 
 /**
+ * An allocation function such as `malloc`.
+ *
+ * Note: `AllocationExpr` includes calls to allocation functions, so prefer
+ * to use that class unless you specifically need to reason about functions.
+ */
+abstract class AllocationFunction extends Function {
+  /**
+   * Gets the index of the argument for the allocation size, if any. The actual
+   * allocation size is the value of this argument multiplied by the result of
+   * `getSizeMult()`, in bytes.
+   */
+  int getSizeArg() { none() }
+
+  /**
+   * Gets the index of an argument that multiplies the allocation size given by
+   * `getSizeArg`, if any.
+   */
+  int getSizeMult() { none() }
+
+  /**
+   * Gets the index of the input pointer argument to be reallocated, if this
+   * is a `realloc` function.
+   */
+  int getReallocPtrArg() { none() }
+
+  /**
+   * Whether or not this allocation requires a corresponding deallocation of
+   * some sort (most do, but `alloca` for example does not).  If it is unclear,
+   * we default to no (for example a placement `new` allocation may or may not
+   * require a corresponding `delete`).
+   */
+  predicate requiresDealloc() { any() }
+}
+
+/**
+ * Holds if an external allocation model exists for the given parameters.
+ */
+extensible predicate allocationFunctionModel(
+  string namespace, string type, boolean subtypes, string name, string sizeArg, string multArg,
+  string reallocPtrArg, boolean requiresDealloc
+);
+
+/**
  * An `operator new` or `operator new[]` function that may be associated with
  * `new` or `new[]` expressions.  Note that `new` and `new[]` are not function
  * calls, but these functions may also be called directly.
  */
 class OperatorNewAllocationFunction extends AllocationFunction {
   OperatorNewAllocationFunction() {
-    hasGlobalName([
+    this.hasGlobalName([
         "operator new", // operator new(bytes, ...)
         "operator new[]" // operator new[](bytes, ...)
       ])
@@ -101,15 +112,15 @@ class OperatorNewAllocationFunction extends AllocationFunction {
 
   override int getSizeArg() { result = 0 }
 
-  override predicate requiresDealloc() { not exists(getPlacementArgument()) }
+  override predicate requiresDealloc() { not exists(this.getPlacementArgument()) }
 
   /**
    * Gets the position of the placement pointer if this is a placement
    * `operator new` function.
    */
   int getPlacementArgument() {
-    getNumberOfParameters() = 2 and
-    getParameter(1).getType() instanceof VoidPointerType and
+    this.getNumberOfParameters() = 2 and
+    this.getParameter(1).getType() instanceof VoidPointerType and
     result = 1
   }
 }
@@ -130,13 +141,15 @@ abstract class HeuristicAllocationExpr extends Expr {
 
   /**
    * Gets a constant multiplier for the allocation size given by `getSizeExpr`,
-   * in bytes.
+   * in bytes. This predicate should be used with caution as it can be
+   * inaccurate for allocations identified using heuristics.
    */
   int getSizeMult() { none() }
 
   /**
    * Gets the size of this allocation in bytes, if it is a fixed size and that
-   * size can be determined.
+   * size can be determined. This predicate should be used with caution as it
+   * can be inaccurate for allocations identified using heuristics.
    */
   int getSizeBytes() { none() }
 

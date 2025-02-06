@@ -1,17 +1,35 @@
 private import codeql.ruby.AST
 private import codeql.ruby.CFG
 private import DataFlowPrivate
-private import codeql.ruby.typetracking.TypeTracker
-private import codeql.ruby.typetracking.TypeTrackerSpecific as TypeTrackerSpecific
-private import codeql.ruby.ast.internal.Module
+private import codeql.ruby.typetracking.internal.TypeTrackingImpl
+private import codeql.ruby.ast.internal.Module as Module
 private import FlowSummaryImpl as FlowSummaryImpl
-private import FlowSummaryImplSpecific as FlowSummaryImplSpecific
 private import codeql.ruby.dataflow.FlowSummary
 private import codeql.ruby.dataflow.SSA
+private import codeql.util.Boolean
+private import codeql.util.Unit
+
+/**
+ * A `LocalSourceNode` for a `self` variable. This is the implicit `self`
+ * parameter, when it exists, otherwise the implicit SSA entry definition.
+ */
+private class SelfLocalSourceNode extends DataFlow::LocalSourceNode {
+  private SelfVariable self;
+
+  SelfLocalSourceNode() {
+    self = this.(SelfParameterNodeImpl).getSelfVariable()
+    or
+    self = this.(SsaSelfDefinitionNode).getVariable()
+  }
+
+  /** Gets the `self` variable. */
+  SelfVariable getVariable() { result = self }
+}
 
 newtype TReturnKind =
   TNormalReturnKind() or
-  TBreakReturnKind()
+  TBreakReturnKind() or
+  TNewReturnKind()
 
 /**
  * Gets a node that can read the value returned from `call` with return kind
@@ -43,6 +61,15 @@ class BreakReturnKind extends ReturnKind, TBreakReturnKind {
   override string toString() { result = "break" }
 }
 
+/**
+ * A special return kind that is used to represent the value returned
+ * from user-defined `new` methods as well as the effect on `self` in
+ * `initialize` methods.
+ */
+class NewReturnKind extends ReturnKind, TNewReturnKind {
+  override string toString() { result = "new" }
+}
+
 /** A callable defined in library code, identified by a unique string. */
 abstract class LibraryCallable extends string {
   bindingset[this]
@@ -55,23 +82,33 @@ abstract class LibraryCallable extends string {
   Call getACallSimple() { none() }
 }
 
+/** A callable defined in library code, which should be taken into account in type tracking. */
+abstract class LibraryCallableToIncludeInTypeTracking extends LibraryCallable {
+  bindingset[this]
+  LibraryCallableToIncludeInTypeTracking() { exists(this) }
+}
+
 /**
  * A callable. This includes callables from source code, as well as callables
  * defined in library code.
  */
 class DataFlowCallable extends TDataFlowCallable {
-  /** Gets the underlying source code callable, if any. */
-  Callable asCallable() { this = TCfgScope(result) }
+  /**
+   * Gets the underlying CFG scope, if any.
+   *
+   * This is usually a `Callable`, but can also be a `Toplevel` file.
+   */
+  CfgScope asCfgScope() { this = TCfgScope(result) }
 
   /** Gets the underlying library callable, if any. */
   LibraryCallable asLibraryCallable() { this = TLibraryCallable(result) }
 
   /** Gets a textual representation of this callable. */
-  string toString() { result = [this.asCallable().toString(), this.asLibraryCallable()] }
+  string toString() { result = [this.asCfgScope().toString(), this.asLibraryCallable()] }
 
   /** Gets the location of this callable. */
   Location getLocation() {
-    result = this.asCallable().getLocation()
+    result = this.asCfgScope().getLocation()
     or
     this instanceof TLibraryCallable and
     result instanceof EmptyLocation
@@ -82,18 +119,18 @@ class DataFlowCallable extends TDataFlowCallable {
  * A call. This includes calls from source code, as well as call(back)s
  * inside library callables with a flow summary.
  */
-class DataFlowCall extends TDataFlowCall {
+abstract class DataFlowCall extends TDataFlowCall {
   /** Gets the enclosing callable. */
-  DataFlowCallable getEnclosingCallable() { none() }
+  abstract DataFlowCallable getEnclosingCallable();
 
   /** Gets the underlying source code call, if any. */
-  CfgNodes::ExprNodes::CallCfgNode asCall() { none() }
+  abstract CfgNodes::ExprNodes::CallCfgNode asCall();
 
   /** Gets a textual representation of this call. */
-  string toString() { none() }
+  abstract string toString();
 
   /** Gets the location of this call. */
-  Location getLocation() { none() }
+  abstract Location getLocation();
 
   /**
    * Holds if this element is at the specified location.
@@ -123,21 +160,23 @@ class DataFlowCall extends TDataFlowCall {
  */
 class SummaryCall extends DataFlowCall, TSummaryCall {
   private FlowSummaryImpl::Public::SummarizedCallable c;
-  private DataFlow::Node receiver;
+  private FlowSummaryImpl::Private::SummaryNode receiver;
 
   SummaryCall() { this = TSummaryCall(c, receiver) }
 
   /** Gets the data flow node that this call targets. */
-  DataFlow::Node getReceiver() { result = receiver }
+  FlowSummaryImpl::Private::SummaryNode getReceiver() { result = receiver }
 
   override DataFlowCallable getEnclosingCallable() { result.asLibraryCallable() = c }
+
+  override CfgNodes::ExprNodes::CallCfgNode asCall() { none() }
 
   override string toString() { result = "[summary] call to " + receiver + " in " + c }
 
   override EmptyLocation getLocation() { any() }
 }
 
-private class NormalCall extends DataFlowCall, TNormalCall {
+class NormalCall extends DataFlowCall, TNormalCall {
   private CfgNodes::ExprNodes::CallCfgNode c;
 
   NormalCall() { this = TNormalCall(c) }
@@ -151,6 +190,91 @@ private class NormalCall extends DataFlowCall, TNormalCall {
   override Location getLocation() { result = c.getLocation() }
 }
 
+/**
+ * Provides modeling of flow through the `render` method of view components.
+ *
+ * ```rb
+ * # view.rb
+ * class View < ViewComponent::Base
+ *     def initialize(x)
+ *         @x = x
+ *     end
+ *
+ *     def foo
+ *         sink(@x)
+ *     end
+ * end
+ * ```
+ *
+ * ```erb
+ * # view.html.erb
+ * <%= foo() %>                     # 1
+ * ```
+ *
+ * ```rb
+ * # app.rb
+ * class App
+ *     def run
+ *         view = View.new(taint)   # 2
+ *         render(view)             # 3
+ *     end
+ * end
+ * ```
+ *
+ * The `render` call (3) is modeled using a flow summary. The summary specifies
+ * that the first argument (`view`) will have a special method invoked on it (we
+ * call the method `__invoke__toplevel__erb__`), which targets the top-level of the
+ * matching ERB file (`view.html.erb`). The `view` argument will flow into the receiver
+ * of the synthesized method call, from there into the implicit `self` parameter of
+ * the ERB file, and from there to the implicit `self` receiver of the call to `foo` (1).
+ *
+ * Since it is not actually possible to specify such flow summaries, we instead
+ * specify a call-back summary, and adjust the generated call to target the special
+ * `__invoke__toplevel__erb__` method.
+ *
+ * In order to resolve the target of the adjusted method call, we need to take
+ * the `render` summary into account when constructing the call graph. That is, we
+ * need to track the `View` instance (2) into the receiver of the adjusted method
+ * call, in order to figure out that the call target is in fact `view.html.erb`.
+ */
+module ViewComponentRenderModeling {
+  private import codeql.ruby.frameworks.ViewComponent
+
+  private class RenderMethod extends SummarizedCallable, LibraryCallableToIncludeInTypeTracking {
+    RenderMethod() { this = "render view component" }
+
+    override MethodCall getACallSimple() { result.getMethodName() = "render" }
+
+    override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+      input = "Argument[0]" and
+      // use a call-back summary, and adjust it to a method call below
+      output = "Argument[0].Parameter[self]" and
+      preservesValue = true
+    }
+  }
+
+  private string invokeToplevelName() { result = "__invoke__toplevel__erb__" }
+
+  /** Holds if `call` should be adjusted to be a method call to `name` on `receiver`. */
+  predicate adjustedMethodCall(DataFlowCall call, FlowSummaryNode receiver, string name) {
+    exists(RenderMethod render |
+      call = TSummaryCall(render, receiver.getSummaryNode()) and
+      name = invokeToplevelName()
+    )
+  }
+
+  /** Holds if `self` belongs to the top-level of an ERB file with matching view class `view`. */
+  pragma[nomagic]
+  predicate selfInErbToplevel(SelfVariable self, ViewComponent::ComponentClass view) {
+    self.getDeclaringScope().(Toplevel).getFile() = view.getTemplate()
+  }
+
+  Toplevel lookupMethod(ViewComponent::ComponentClass m, string name) {
+    result.getFile() = m.getTemplate() and
+    name = invokeToplevelName()
+  }
+}
+
 /** A call for which we want to compute call targets. */
 private class RelevantCall extends CfgNodes::ExprNodes::CallCfgNode {
   pragma[nomagic]
@@ -161,14 +285,19 @@ private class RelevantCall extends CfgNodes::ExprNodes::CallCfgNode {
 }
 
 pragma[nomagic]
-private predicate methodCall(RelevantCall call, DataFlow::Node receiver, string method) {
-  method = call.getExpr().(MethodCall).getMethodName() and
-  receiver.asExpr() = call.getReceiver()
+private predicate methodCall(DataFlowCall call, DataFlow::Node receiver, string method) {
+  call.asCall() =
+    any(RelevantCall rc |
+      method = rc.getExpr().(MethodCall).getMethodName() and
+      receiver.asExpr() = rc.getReceiver()
+    )
+  or
+  ViewComponentRenderModeling::adjustedMethodCall(call, receiver, method)
 }
 
 pragma[nomagic]
 private predicate flowsToMethodCallReceiver(
-  RelevantCall call, DataFlow::LocalSourceNode sourceNode, string method
+  DataFlowCall call, DataFlow::LocalSourceNode sourceNode, string method
 ) {
   exists(DataFlow::Node receiver |
     methodCall(call, receiver, method) and
@@ -177,26 +306,19 @@ private predicate flowsToMethodCallReceiver(
 }
 
 pragma[nomagic]
-private predicate moduleFlowsToMethodCallReceiver(RelevantCall call, Module m, string method) {
+private predicate moduleFlowsToMethodCallReceiver(DataFlowCall call, Module m, string method) {
   flowsToMethodCallReceiver(call, trackModuleAccess(m), method)
 }
 
-private Block yieldCall(RelevantCall call) {
-  call.getExpr() instanceof YieldCall and
-  exists(BlockParameterNode node |
-    node = trackBlock(result) and
-    node.getMethod() = call.getExpr().getEnclosingMethod()
-  )
+private Block blockCall(RelevantCall call) {
+  lambdaSourceCall(call, _, trackBlock(result).(DataFlow::LocalSourceNode).getALocalUse())
 }
 
 pragma[nomagic]
-private predicate superCall(RelevantCall call, Module superClass, string method) {
+private predicate superCall(RelevantCall call, Module cls, string method) {
   call.getExpr() instanceof SuperCall and
-  exists(Module tp |
-    tp = call.getExpr().getEnclosingModule().getModule() and
-    superClass = tp.getSuperClass() and
-    method = call.getExpr().getEnclosingMethod().getName()
-  )
+  cls = call.getExpr().getEnclosingModule().getModule() and
+  method = call.getExpr().getEnclosingMethod().getName()
 }
 
 /** Holds if `self` belongs to module `m`. */
@@ -211,7 +333,7 @@ private predicate selfInModule(SelfVariable self, Module m) {
 
 /** Holds if `self` belongs to method `method` inside module `m`. */
 pragma[nomagic]
-private predicate selfInMethod(SelfVariable self, MethodBase method, Module m) {
+predicate selfInMethod(SelfVariable self, MethodBase method, Module m) {
   exists(ModuleBase encl |
     method = self.getDeclaringScope() and
     encl = method.getEnclosingModule() and
@@ -221,71 +343,49 @@ private predicate selfInMethod(SelfVariable self, MethodBase method, Module m) {
   )
 }
 
-/** Holds if `self` belongs to the top-level. */
-pragma[nomagic]
-private predicate selfInToplevel(SelfVariable self, Module m) {
-  self.getDeclaringScope() instanceof Toplevel and
-  m = TResolved("Object")
-}
-
-/**
- * Holds if SSA definition `def` belongs to a variable introduced via pattern
- * matching on type `m`. For example, in
- *
- * ```rb
- * case object
- *   in C => c then c.foo
- * end
- * ```
- *
- * the SSA definition for `c` is introduced by matching on `C`.
- */
-private predicate asModulePattern(SsaDefinitionNode def, Module m) {
-  exists(AsPattern ap |
-    m = resolveConstantReadAccess(ap.getPattern()) and
-    def.getDefinition().(Ssa::WriteDefinition).getWriteAccess() = ap.getVariableAccess()
-  )
-}
-
-/**
- * Holds if `read1` and `read2` are adjacent reads of SSA definition `def`,
- * and `read2` is checked to have type `m`. For example, in
- *
- * ```rb
- * case object
- *   when C then object.foo
- * end
- * ```
- *
- * the two reads of `object` are adjacent, and the second is checked to have type `C`.
- */
-private predicate hasAdjacentTypeCheckedReads(
-  Ssa::Definition def, CfgNodes::ExprCfgNode read1, CfgNodes::ExprCfgNode read2, Module m
-) {
-  exists(
-    CfgNodes::ExprCfgNode pattern, ConditionBlock cb, CfgNodes::ExprNodes::CaseExprCfgNode case
-  |
-    m = resolveConstantReadAccess(pattern.getExpr()) and
-    cb.getLastNode() = pattern and
-    cb.controls(read2.getBasicBlock(),
-      any(SuccessorTypes::MatchingSuccessor match | match.getValue() = true)) and
-    def.hasAdjacentReads(read1, read2) and
-    case.getValue() = read1
-  |
-    pattern = case.getBranch(_).(CfgNodes::ExprNodes::WhenClauseCfgNode).getPattern(_)
+/** Holds if `new` is a user-defined `self.new` method. */
+predicate isUserDefinedNew(SingletonMethod new) {
+  exists(Expr object | singletonMethod(new, "new", object) |
+    selfInModule(object.(SelfVariableReadAccess).getVariable(), _)
     or
-    pattern = case.getBranch(_).(CfgNodes::ExprNodes::InClauseCfgNode).getPattern()
+    exists(Module::resolveConstantReadAccess(object))
   )
 }
+
+private DataFlowCallable viableSourceCallableNonInit(DataFlowCall call) {
+  result.asCfgScope() = getTargetInstance(call, _)
+  or
+  result.asCfgScope() = getTargetSingleton(call, _)
+  or
+  exists(Module cls, string method |
+    superCall(call.asCall(), cls, method) and
+    result.asCfgScope() = lookupMethod(cls.getAnImmediateAncestor(), method)
+  )
+}
+
+private Callable viableSourceCallableInit(RelevantCall call) { result = getInitializeTarget(call) }
 
 /** Holds if `call` may resolve to the returned source-code method. */
 private DataFlowCallable viableSourceCallable(DataFlowCall call) {
-  result = TCfgScope(getTarget(call.asCall())) and
-  not call.asCall().getExpr() instanceof YieldCall // handled by `lambdaCreation`/`lambdaCall`
+  result = viableSourceCallableNonInit(call) or
+  result.asCfgScope() = viableSourceCallableInit(call.asCall()) or
+  result = any(AdditionalCallTarget t).viableTarget(call.asCall())
+}
+
+/**
+ * A unit class for adding additional call steps.
+ *
+ * Extend this class to add additional call steps to the data flow graph.
+ */
+class AdditionalCallTarget extends Unit {
+  /**
+   * Gets a viable target for `call`.
+   */
+  abstract DataFlowCallable viableTarget(CfgNodes::ExprNodes::CallCfgNode call);
 }
 
 /** Holds if `call` may resolve to the returned summarized library method. */
-private DataFlowCallable viableLibraryCallable(DataFlowCall call) {
+DataFlowCallable viableLibraryCallable(DataFlowCall call) {
   exists(LibraryCallable callable |
     result = TLibraryCallable(callable) and
     call.asCall().getExpr() = [callable.getACall(), callable.getACallSimple()]
@@ -298,8 +398,8 @@ private predicate extendCall(DataFlow::ExprNode receiver, Module m) {
   exists(DataFlow::CallNode extendCall |
     extendCall.getMethodName() = "extend" and
     exists(DataFlow::LocalSourceNode sourceNode | sourceNode.flowsTo(extendCall.getArgument(_)) |
-      selfInModule(sourceNode.(SsaSelfDefinitionNode).getVariable(), m) or
-      m = resolveConstantReadAccess(sourceNode.asExpr().getExpr())
+      selfInModule(sourceNode.(SelfLocalSourceNode).getVariable(), m) or
+      m = Module::resolveConstantReadAccess(sourceNode.asExpr().getExpr())
     ) and
     receiver = extendCall.getReceiver()
   )
@@ -311,9 +411,15 @@ private predicate extendCallModule(Module m, Module n) {
   exists(DataFlow::LocalSourceNode receiver, DataFlow::ExprNode e |
     receiver.flowsTo(e) and extendCall(e, n)
   |
-    selfInModule(receiver.(SsaSelfDefinitionNode).getVariable(), m) or
-    m = resolveConstantReadAccess(receiver.asExpr().getExpr())
+    selfInModule(receiver.(SelfLocalSourceNode).getVariable(), m) or
+    m = Module::resolveConstantReadAccess(receiver.asExpr().getExpr())
   )
+}
+
+private CfgScope lookupMethod(Module m, string name) {
+  result = Module::lookupMethod(m, name)
+  or
+  result = ViewComponentRenderModeling::lookupMethod(m, name)
 }
 
 /**
@@ -321,11 +427,11 @@ private predicate extendCallModule(Module m, Module n) {
  * sub classes when `exact = false`.
  */
 pragma[nomagic]
-private Method lookupMethod(Module m, string name, boolean exact) {
+private CfgScope lookupMethod(Module m, string name, boolean exact) {
   result = lookupMethod(m, name) and
   exact in [false, true]
   or
-  result = lookupMethodInSubClasses(m, name) and
+  result = Module::lookupMethodInSubClasses(m, name) and
   exact = false
 }
 
@@ -339,137 +445,33 @@ private module Cached {
   cached
   newtype TDataFlowCall =
     TNormalCall(CfgNodes::ExprNodes::CallCfgNode c) or
-    TSummaryCall(FlowSummaryImpl::Public::SummarizedCallable c, DataFlow::Node receiver) {
+    TSummaryCall(
+      FlowSummaryImpl::Public::SummarizedCallable c, FlowSummaryImpl::Private::SummaryNode receiver
+    ) {
       FlowSummaryImpl::Private::summaryCallbackRange(c, receiver)
     }
 
-  pragma[nomagic]
-  private Method lookupInstanceMethodCall(RelevantCall call, string method, boolean exact) {
-    exists(Module tp, DataFlow::Node receiver |
-      methodCall(call, pragma[only_bind_into](receiver), pragma[only_bind_into](method)) and
-      receiver = trackInstance(tp, exact) and
-      result = lookupMethod(tp, pragma[only_bind_into](method), exact)
-    )
-  }
-
-  pragma[nomagic]
-  private predicate isToplevelMethodInFile(Method m, File f) {
-    m.getEnclosingModule() instanceof Toplevel and
-    f = m.getFile()
-  }
-
-  /** Holds if a `self` access may be the receiver of `call` directly inside module `m`. */
-  pragma[nomagic]
-  private predicate selfInModuleFlowsToMethodCallReceiver(RelevantCall call, Module m, string method) {
-    exists(SsaSelfDefinitionNode self |
-      flowsToMethodCallReceiver(call, self, method) and
-      selfInModule(self.getVariable(), m)
-    )
-  }
-
   /**
-   * Holds if a `self` access may be the receiver of `call` inside some singleton method, where
-   * that method belongs to `m` or one of `m`'s transitive super classes.
+   * Gets the relevant `initialize` method for the `new` call, if any.
    */
-  pragma[nomagic]
-  private predicate selfInSingletonMethodFlowsToMethodCallReceiver(
-    RelevantCall call, Module m, string method
-  ) {
-    exists(SsaSelfDefinitionNode self, MethodBase caller |
-      flowsToMethodCallReceiver(call, self, method) and
-      selfInMethod(self.getVariable(), caller, m) and
-      singletonMethod(caller, _, _)
+  cached
+  Method getInitializeTarget(RelevantCall new) {
+    exists(Module m, boolean exact |
+      isStandardNewCall(new, m, exact) and
+      result = lookupMethod(m, "initialize", exact) and
+      // In the case where `exact = false`, we need to check that there is
+      // no user-defined `new` method in between `m` and the enclosing module
+      // of the `initialize` method (`isStandardNewCall` already checks that
+      // there is no user-defined `new` method in `m` or any of `m`'s ancestors)
+      not hasUserDefinedNew(result.getEnclosingModule().getModule())
     )
   }
 
   cached
-  CfgScope getTarget(RelevantCall call) {
-    exists(string method |
-      exists(boolean exact |
-        result = lookupInstanceMethodCall(call, method, exact) and
-        (
-          if result.(Method).isPrivate()
-          then
-            call.getReceiver().getExpr() instanceof SelfVariableAccess and
-            // For now, we restrict the scope of top-level declarations to their file.
-            // This may remove some plausible targets, but also removes a lot of
-            // implausible targets
-            (
-              isToplevelMethodInFile(result, call.getFile()) or
-              not isToplevelMethodInFile(result, _)
-            )
-          else any()
-        ) and
-        if result.(Method).isProtected()
-        then result = lookupMethod(call.getExpr().getEnclosingModule().getModule(), method, exact)
-        else any()
-      )
-      or
-      // singleton method defined on an instance, e.g.
-      // ```rb
-      // c = C.new
-      // def c.singleton; end # <- result
-      // c.singleton          # <- call
-      // ```
-      // or an `extend`ed instance, e.g.
-      // ```rb
-      // c = C.new
-      // module M
-      //   def instance; end  # <- result
-      // end
-      // c.extend M
-      // c.instance # <- call
-      // ```
-      exists(DataFlow::Node receiver |
-        methodCall(call, receiver, method) and
-        receiver = trackSingletonMethodOnInstance(result, method)
-      )
-      or
-      // singleton method defined on a module
-      // or an `extend`ed module, e.g.
-      // ```rb
-      // module M
-      //   def instance; end  # <- result
-      // end
-      // M.extend(M)
-      // M.instance           # <- call
-      // ```
-      exists(Module m, boolean exact | result = lookupSingletonMethod(m, method, exact) |
-        // ```rb
-        // def C.singleton; end # <- result
-        // C.singleton          # <- call
-        // ```
-        moduleFlowsToMethodCallReceiver(call, m, method) and
-        exact = true
-        or
-        // ```rb
-        // class C
-        //   def self.singleton; end # <- result
-        //   self.singleton          # <- call
-        // end
-        // ```
-        selfInModuleFlowsToMethodCallReceiver(call, m, method) and
-        exact = true
-        or
-        // ```rb
-        // class C
-        //   def self.singleton; end # <- result
-        //   def self.other
-        //     self.singleton        # <- call
-        //   end
-        // end
-        // ```
-        selfInSingletonMethodFlowsToMethodCallReceiver(call, m, method) and
-        exact = false
-      )
-    )
+  CfgScope getTarget(DataFlowCall call) {
+    result = viableSourceCallableNonInit(call).asCfgScope()
     or
-    exists(Module superClass, string method |
-      superCall(call, superClass, method) and
-      result = lookupMethod(superClass, method)
-    )
-    or
-    result = yieldCall(call)
+    result = blockCall(call.asCall())
   }
 
   /** Gets a viable run-time target for the call `call`. */
@@ -483,191 +485,118 @@ private module Cached {
   cached
   newtype TArgumentPosition =
     TSelfArgumentPosition() or
+    TLambdaSelfArgumentPosition() or
     TBlockArgumentPosition() or
     TPositionalArgumentPosition(int pos) {
       exists(Call c | exists(c.getArgument(pos)))
       or
-      FlowSummaryImplSpecific::ParsePositions::isParsedParameterPosition(_, pos)
+      FlowSummaryImpl::ParsePositions::isParsedParameterPosition(_, pos)
     } or
     TKeywordArgumentPosition(string name) {
       name = any(KeywordParameter kp).getName()
       or
       exists(any(Call c).getKeywordArgument(name))
       or
-      FlowSummaryImplSpecific::ParsePositions::isParsedKeywordParameterPosition(_, name)
+      FlowSummaryImpl::ParsePositions::isParsedKeywordParameterPosition(_, name)
     } or
     THashSplatArgumentPosition() or
+    TSynthHashSplatArgumentPosition() or
+    TSplatArgumentPosition(int pos) { exists(Call c | c.getArgument(pos) instanceof SplatExpr) } or
+    TSynthSplatArgumentPosition(int actualSplatPos) {
+      actualSplatPos = -1 // represents no actual splat
+      or
+      exists(Call c | c.getArgument(actualSplatPos) instanceof SplatExpr)
+    } or
     TAnyArgumentPosition() or
     TAnyKeywordArgumentPosition()
 
   cached
   newtype TParameterPosition =
     TSelfParameterPosition() or
+    TLambdaSelfParameterPosition() or
     TBlockParameterPosition() or
     TPositionalParameterPosition(int pos) {
       pos = any(Parameter p).getPosition()
       or
-      FlowSummaryImplSpecific::ParsePositions::isParsedArgumentPosition(_, pos)
+      FlowSummaryImpl::ParsePositions::isParsedArgumentPosition(_, pos)
     } or
     TPositionalParameterLowerBoundPosition(int pos) {
-      FlowSummaryImplSpecific::ParsePositions::isParsedArgumentLowerBoundPosition(_, pos)
+      FlowSummaryImpl::ParsePositions::isParsedArgumentLowerBoundPosition(_, pos)
     } or
     TKeywordParameterPosition(string name) {
       name = any(KeywordParameter kp).getName()
       or
-      FlowSummaryImplSpecific::ParsePositions::isParsedKeywordArgumentPosition(_, name)
+      exists(any(Call c).getKeywordArgument(name))
+      or
+      FlowSummaryImpl::ParsePositions::isParsedKeywordArgumentPosition(_, name)
     } or
     THashSplatParameterPosition() or
+    TSynthHashSplatParameterPosition() or
+    TSplatParameterPosition(int pos) {
+      pos = 0 // needed for flow summaries
+      or
+      exists(Parameter p | p.getPosition() = pos and p instanceof SplatParameter)
+    } or
+    TSynthSplatParameterPosition(int actualSplatPos) {
+      actualSplatPos = -1 // represents no actual splat
+      or
+      exists(Callable c | c.getParameter(actualSplatPos) instanceof SplatParameter)
+    } or
     TAnyParameterPosition() or
     TAnyKeywordParameterPosition()
 }
 
 import Cached
 
+private module TrackModuleInput implements CallGraphConstruction::Simple::InputSig {
+  class State = Module;
+
+  predicate start(DataFlow::Node start, Module m) {
+    m = Module::resolveConstantReadAccess(start.asExpr().getExpr())
+  }
+
+  // We exclude steps into `self` parameters, and instead rely on the type of the
+  // enclosing module
+  predicate filter(DataFlow::Node n) { n instanceof SelfParameterNodeImpl }
+}
+
+predicate trackModuleAccess = CallGraphConstruction::Simple::Make<TrackModuleInput>::track/1;
+
 pragma[nomagic]
-private DataFlow::LocalSourceNode trackModuleAccess(Module m, TypeTracker t) {
-  t.start() and m = resolveConstantReadAccess(result.asExpr().getExpr())
-  or
-  exists(TypeTracker t2, StepSummary summary |
-    result = trackModuleAccessRec(m, t2, summary) and t = t2.append(summary)
+private predicate hasUserDefinedNew(Module m) {
+  exists(DataFlow::MethodNode method |
+    // not `getAnAncestor` because singleton methods cannot be included
+    singletonMethodOnModule(method.asCallableAstNode(), "new", m.getSuperClass*()) and
+    not method.getSelfParameter().getAMethodCall("allocate").flowsTo(method.getAReturnNode())
   )
 }
 
 /**
- * We exclude steps into `self` parameters, and instead rely on the type of the
- * enclosing module.
+ * Holds if `new` is a call to `new`, targeting a class of type `m` (or a
+ * sub class, when `exact = false`), where there is no user-defined
+ * `self.new` on `m`.
  */
 pragma[nomagic]
-private DataFlow::LocalSourceNode trackModuleAccessRec(Module m, TypeTracker t, StepSummary summary) {
-  StepSummary::step(trackModuleAccess(m, t), result, summary) and
-  not result instanceof SelfParameterNode
-}
-
-pragma[nomagic]
-private DataFlow::LocalSourceNode trackModuleAccess(Module m) {
-  result = trackModuleAccess(m, TypeTracker::end())
-}
-
-/** Holds if `n` is an instance of type `tp`. */
-private predicate isInstance(DataFlow::Node n, Module tp, boolean exact) {
-  n.asExpr().getExpr() instanceof NilLiteral and
-  tp = TResolved("NilClass") and
-  exact = true
-  or
-  n.asExpr().getExpr().(BooleanLiteral).isFalse() and
-  tp = TResolved("FalseClass") and
-  exact = true
-  or
-  n.asExpr().getExpr().(BooleanLiteral).isTrue() and
-  tp = TResolved("TrueClass") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof IntegerLiteral and
-  tp = TResolved("Integer") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof FloatLiteral and
-  tp = TResolved("Float") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof RationalLiteral and
-  tp = TResolved("Rational") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof ComplexLiteral and
-  tp = TResolved("Complex") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof StringlikeLiteral and
-  tp = TResolved("String") and
-  exact = true
-  or
-  n.asExpr() instanceof CfgNodes::ExprNodes::ArrayLiteralCfgNode and
-  tp = TResolved("Array") and
-  exact = true
-  or
-  n.asExpr() instanceof CfgNodes::ExprNodes::HashLiteralCfgNode and
-  tp = TResolved("Hash") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof MethodBase and
-  tp = TResolved("Symbol") and
-  exact = true
-  or
-  n.asParameter() instanceof BlockParameter and
-  tp = TResolved("Proc") and
-  exact = true
-  or
-  n.asExpr().getExpr() instanceof Lambda and
-  tp = TResolved("Proc") and
-  exact = true
-  or
-  exists(RelevantCall call, DataFlow::LocalSourceNode sourceNode |
-    flowsToMethodCallReceiver(call, sourceNode, "new") and
-    n.asExpr() = call
+predicate isStandardNewCall(RelevantCall new, Module m, boolean exact) {
+  exists(DataFlow::LocalSourceNode sourceNode |
+    flowsToMethodCallReceiver(TNormalCall(new), sourceNode, "new") and
+    // `m` should not have a user-defined `self.new` method
+    not hasUserDefinedNew(m)
   |
     // `C.new`
-    sourceNode = trackModuleAccess(tp) and
+    sourceNode = trackModuleAccess(m) and
     exact = true
     or
     // `self.new` inside a module
-    selfInModule(sourceNode.(SsaSelfDefinitionNode).getVariable(), tp) and
+    selfInModule(sourceNode.(SelfLocalSourceNode).getVariable(), m) and
     exact = true
     or
     // `self.new` inside a singleton method
     exists(MethodBase caller |
-      selfInMethod(sourceNode.(SsaSelfDefinitionNode).getVariable(), caller, tp) and
+      selfInMethod(sourceNode.(SelfLocalSourceNode).getVariable(), caller, m) and
       singletonMethod(caller, _, _) and
       exact = false
     )
-  )
-  or
-  // `self` reference in method or top-level (but not in module or singleton method,
-  // where instance methods cannot be called; only singleton methods)
-  n =
-    any(SsaSelfDefinitionNode self |
-      exists(MethodBase m |
-        selfInMethod(self.getVariable(), m, tp) and
-        not m instanceof SingletonMethod and
-        if m.getEnclosingModule() instanceof Toplevel then exact = true else exact = false
-      )
-      or
-      selfInToplevel(self.getVariable(), tp) and
-      exact = true
-    )
-  or
-  // `in C => c then c.foo`
-  asModulePattern(n, tp) and
-  exact = false
-  or
-  // `case object when C then object.foo`
-  hasAdjacentTypeCheckedReads(_, _, n.asExpr(), tp) and
-  exact = false
-}
-
-pragma[nomagic]
-private DataFlow::Node trackInstance(Module tp, boolean exact, TypeTracker t) {
-  t.start() and
-  (
-    isInstance(result, tp, exact)
-    or
-    exists(Module m |
-      (if m.isClass() then tp = TResolved("Class") else tp = TResolved("Module")) and
-      exact = true
-    |
-      // needed for e.g. `C.new`
-      m = resolveConstantReadAccess(result.asExpr().getExpr())
-      or
-      // needed for e.g. `self.include`
-      selfInModule(result.(SsaSelfDefinitionNode).getVariable(), m)
-      or
-      // needed for e.g. `self.puts`
-      selfInMethod(result.(SsaSelfDefinitionNode).getVariable(), any(SingletonMethod sm), m)
-    )
-  )
-  or
-  exists(TypeTracker t2, StepSummary summary |
-    result = trackInstanceRec(tp, t2, exact, summary) and t = t2.append(summary)
   )
 }
 
@@ -676,51 +605,117 @@ private predicate localFlowStep(DataFlow::Node nodeFrom, DataFlow::Node nodeTo, 
   summary.toString() = "level"
 }
 
-pragma[nomagic]
-private predicate hasAdjacentTypeCheckedReads(DataFlow::Node node) {
-  hasAdjacentTypeCheckedReads(_, _, node.asExpr(), _)
-}
+private module TrackInstanceInput implements CallGraphConstruction::InputSig {
+  newtype State = additional MkState(Module m, Boolean exact)
 
-/**
- * We exclude steps into `self` parameters and type checked variables. For those,
- * we instead rely on the type of the enclosing module resp. the type being checked
- * against, and apply an open-world assumption when determining possible dispatch
- * targets.
- */
-pragma[nomagic]
-private DataFlow::Node trackInstanceRec(Module tp, TypeTracker t, boolean exact, StepSummary summary) {
-  exists(DataFlow::Node mid | mid = trackInstance(tp, exact, t) |
-    StepSummary::smallstep(mid, result, summary) and
-    not result instanceof SelfParameterNode
+  predicate start(DataFlow::Node start, State state) {
+    exists(Module tp, boolean exact | state = MkState(tp, exact) |
+      TypeInference::hasType(start, tp, exact)
+      or
+      exists(Module m |
+        (if m.isClass() then tp = Module::TResolved("Class") else tp = Module::TResolved("Module")) and
+        exact = true
+      |
+        // needed for e.g. `C.new`
+        m = Module::resolveConstantReadAccess(start.asExpr().getExpr())
+        or
+        // needed for e.g. `self.include`
+        selfInModule(start.(SelfLocalSourceNode).getVariable(), m)
+        or
+        // needed for e.g. `self.puts`
+        selfInMethod(start.(SelfLocalSourceNode).getVariable(), any(SingletonMethod sm), m)
+      )
+    )
+  }
+
+  pragma[nomagic]
+  private predicate hasAdjacentTypeCheckedRead(DataFlow::Node node) {
+    TypeInference::hasAdjacentTypeCheckedRead(node.asExpr(), _)
+  }
+
+  pragma[nomagic]
+  predicate stepNoCall(DataFlow::Node nodeFrom, DataFlow::Node nodeTo, StepSummary summary) {
+    smallStepNoCall(nodeFrom, nodeTo, summary)
     or
-    localFlowStep(mid, result, summary) and
-    not hasAdjacentTypeCheckedReads(result)
-  )
+    // We exclude steps into type checked variables. For those, we instead rely on the
+    // type being checked against
+    localFlowStep(nodeFrom, nodeTo, summary) and
+    not hasAdjacentTypeCheckedRead(nodeTo) and
+    not TypeInference::asModulePattern(nodeTo.(SsaDefinitionExtNode).getDefinitionExt(), _)
+  }
+
+  predicate stepCall(DataFlow::Node nodeFrom, DataFlow::Node nodeTo, StepSummary summary) {
+    smallStepCall(nodeFrom, nodeTo, summary)
+  }
+
+  class StateProj = Unit;
+
+  Unit stateProj(State state) { exists(state) and exists(result) }
+
+  // We exclude steps into `self` parameters, and instead rely on the type of the
+  // enclosing module
+  predicate filter(DataFlow::Node n, Unit u) {
+    n instanceof SelfParameterNodeImpl and
+    exists(u)
+  }
 }
 
 pragma[nomagic]
 private DataFlow::Node trackInstance(Module tp, boolean exact) {
-  result = trackInstance(tp, exact, TypeTracker::end())
+  result =
+    CallGraphConstruction::Make<TrackInstanceInput>::track(TrackInstanceInput::MkState(tp, exact))
 }
 
 pragma[nomagic]
-private DataFlow::LocalSourceNode trackBlock(Block block, TypeTracker t) {
-  t.start() and result.asExpr().getExpr() = block
-  or
-  exists(TypeTracker t2, StepSummary summary |
-    result = trackBlockRec(block, t2, summary) and t = t2.append(summary)
+private CfgScope lookupInstanceMethodCall(DataFlowCall call, string method, boolean exact) {
+  exists(Module tp, DataFlow::Node receiver |
+    methodCall(call, pragma[only_bind_into](receiver), pragma[only_bind_into](method)) and
+    receiver = trackInstance(tp, exact) and
+    result = lookupMethod(tp, pragma[only_bind_into](method), exact)
   )
 }
 
 pragma[nomagic]
-private DataFlow::LocalSourceNode trackBlockRec(Block block, TypeTracker t, StepSummary summary) {
-  StepSummary::step(trackBlock(block, t), result, summary)
+private predicate isToplevelMethodInFile(Method m, File f) {
+  m.getEnclosingModule() instanceof Toplevel and
+  f = m.getFile()
 }
 
 pragma[nomagic]
-private DataFlow::LocalSourceNode trackBlock(Block block) {
-  result = trackBlock(block, TypeTracker::end())
+private CfgScope getTargetInstance(DataFlowCall call, string method) {
+  exists(boolean exact |
+    result = lookupInstanceMethodCall(call, method, exact) and
+    (
+      if result.(Method).isPrivate()
+      then
+        call.asCall().getReceiver().getExpr() instanceof SelfVariableAccess and
+        // For now, we restrict the scope of top-level declarations to their file.
+        // This may remove some plausible targets, but also removes a lot of
+        // implausible targets
+        (
+          isToplevelMethodInFile(result, call.asCall().getFile()) or
+          not isToplevelMethodInFile(result, _)
+        )
+      else any()
+    ) and
+    if result.(Method).isProtected()
+    then
+      result = lookupMethod(call.asCall().getExpr().getEnclosingModule().getModule(), method, exact)
+    else any()
+  )
 }
+
+private module TrackBlockInput implements CallGraphConstruction::Simple::InputSig {
+  class State = Block;
+
+  predicate start(DataFlow::Node start, Block block) { start.asExpr().getExpr() = block }
+
+  // We exclude steps into `self` parameters, and instead rely on the type of the
+  // enclosing module
+  predicate filter(DataFlow::Node n) { n instanceof SelfParameterNodeImpl }
+}
+
+private predicate trackBlock = CallGraphConstruction::Simple::Make<TrackBlockInput>::track/1;
 
 /** Holds if `m` is a singleton method named `name`, defined on `object. */
 private predicate singletonMethod(MethodBase m, string name, Expr object) {
@@ -782,7 +777,7 @@ private predicate singletonMethodOnModule(MethodBase method, string name, Module
   )
   or
   exists(DataFlow::LocalSourceNode sourceNode |
-    m = resolveConstantReadAccess(sourceNode.asExpr().getExpr()) and
+    m = Module::resolveConstantReadAccess(sourceNode.asExpr().getExpr()) and
     flowsToSingletonMethodObject(sourceNode, method, name)
   )
   or
@@ -798,7 +793,7 @@ private MethodBase lookupSingletonMethodDirect(Module m, string name) {
   or
   exists(DataFlow::LocalSourceNode sourceNode |
     sourceNode = trackModuleAccess(m) and
-    not m = resolveConstantReadAccess(sourceNode.asExpr().getExpr()) and
+    not m = Module::resolveConstantReadAccess(sourceNode.asExpr().getExpr()) and
     flowsToSingletonMethodObject(sourceNode, result, name)
   )
 }
@@ -814,7 +809,7 @@ private MethodBase lookupSingletonMethod(Module m, string name) {
   // cannot use `lookupSingletonMethodDirect` because it would introduce
   // negative recursion
   not singletonMethodOnModule(_, name, m) and
-  result = lookupSingletonMethod(m.getSuperClass(), name)
+  result = lookupSingletonMethod(m.getSuperClass(), name) // not `getAnImmediateAncestor` because singleton methods cannot be included
 }
 
 pragma[nomagic]
@@ -824,8 +819,10 @@ private MethodBase lookupSingletonMethodInSubClasses(Module m, string name) {
   // The 'self' inside such a singleton method could then be any class, leading to self-calls
   // being resolved to arbitrary singleton methods.
   // To remedy this, we do not allow following super-classes all the way to Object.
-  not m = TResolved("Object") and
-  exists(Module sub | sub.getSuperClass() = m |
+  not m = Module::TResolved("Object") and
+  exists(Module sub |
+    sub.getSuperClass() = m // not `getAnImmediateAncestor` because singleton methods cannot be included
+  |
     result = lookupSingletonMethodDirect(sub, name) or
     result = lookupSingletonMethodInSubClasses(sub, name)
   )
@@ -876,7 +873,7 @@ predicate singletonMethodOnInstance(MethodBase method, string name, Expr object)
   singletonMethod(method, name, object) and
   not selfInModule(object.(SelfVariableReadAccess).getVariable(), _) and
   // cannot use `trackModuleAccess` because of negative recursion
-  not exists(resolveConstantReadAccess(object))
+  not exists(Module::resolveConstantReadAccess(object))
   or
   exists(DataFlow::ExprNode receiver, Module other |
     extendCall(receiver, other) and
@@ -885,206 +882,300 @@ predicate singletonMethodOnInstance(MethodBase method, string name, Expr object)
   )
 }
 
-/**
- * Holds if there is reverse flow from `nodeFrom` to `nodeTo` via a parameter.
- *
- * This is only used for tracking singleton methods, where we want to be able
- * to handle cases like
- *
- * ```rb
- * def add_singleton x
- *   def x.foo; end
- * end
- *
- * y = add_singleton C.new
- * y.foo
- * ```
- *
- * and
- *
- * ```rb
- * class C
- *   def add_singleton_to_self
- *     def self.foo; end
- *   end
- * end
- *
- * y = C.new
- * y.add_singleton_to_self
- * y.foo
- * ```
- */
-pragma[nomagic]
-private predicate paramReturnFlow(
-  DataFlow::Node nodeFrom, DataFlow::PostUpdateNode nodeTo, StepSummary summary
-) {
-  exists(RelevantCall call, DataFlow::Node arg, DataFlow::ParameterNode p, Expr nodeFromPreExpr |
-    TypeTrackerSpecific::callStep(call, arg, p) and
-    nodeTo.getPreUpdateNode() = arg and
-    summary.toString() = "return" and
-    (
-      nodeFromPreExpr = nodeFrom.(DataFlow::PostUpdateNode).getPreUpdateNode().asExpr().getExpr()
+private module TrackSingletonMethodOnInstanceInput implements CallGraphConstruction::InputSig {
+  /**
+   * Holds if there is reverse flow from `nodeFrom` to `nodeTo` via a parameter.
+   *
+   * This is only used for tracking singleton methods, where we want to be able
+   * to handle cases like
+   *
+   * ```rb
+   * def add_singleton x
+   *   def x.foo; end
+   * end
+   *
+   * y = add_singleton C.new
+   * y.foo
+   * ```
+   *
+   * and
+   *
+   * ```rb
+   * class C
+   *   def add_singleton_to_self
+   *     def self.foo; end
+   *   end
+   * end
+   *
+   * y = C.new
+   * y.add_singleton_to_self
+   * y.foo
+   * ```
+   */
+  pragma[nomagic]
+  private predicate paramReturnFlow(
+    DataFlow::Node nodeFrom, DataFlow::PostUpdateNode nodeTo, StepSummary summary
+  ) {
+    exists(
+      RelevantCall call, DataFlow::Node arg, DataFlow::ParameterNode p,
+      CfgNodes::ExprCfgNode nodeFromPreExpr
+    |
+      sourceCallStep(call, arg, p) and
+      nodeTo.getPreUpdateNode() = arg and
+      summary.toString() = "return" and
+      (
+        nodeFromPreExpr = nodeFrom.(DataFlow::PostUpdateNode).getPreUpdateNode().asExpr()
+        or
+        nodeFromPreExpr = nodeFrom.asExpr() and
+        singletonMethodOnInstance(_, _, nodeFromPreExpr.getExpr())
+      )
+    |
+      nodeFromPreExpr = getParameterDef(p.getParameter()).getARead()
       or
-      nodeFromPreExpr = nodeFrom.asExpr().getExpr() and
-      singletonMethodOnInstance(_, _, nodeFromPreExpr)
+      nodeFromPreExpr = p.(SelfParameterNodeImpl).getSelfDefinition().getARead()
     )
-  |
-    nodeFromPreExpr = p.getParameter().(NamedParameter).getVariable().getAnAccess()
-    or
-    nodeFromPreExpr = p.(SelfParameterNode).getSelfVariable().getAnAccess()
-  )
-}
+  }
 
-pragma[nomagic]
-private DataFlow::Node trackSingletonMethodOnInstance(MethodBase method, string name, TypeTracker t) {
-  t.start() and
-  singletonMethodOnInstance(method, name, result.asExpr().getExpr())
-  or
-  exists(TypeTracker t2, StepSummary summary |
-    result = trackSingletonMethodOnInstanceRec(method, name, t2, summary) and
-    t = t2.append(summary) and
-    // Stop flow at redefinitions.
-    //
-    // Example:
-    // ```rb
-    // def x.foo; end
-    // def x.foo; end
-    // x.foo # <- we want to resolve this call to the second definition only
-    // ```
-    not singletonMethodOnInstance(_, name, result.asExpr().getExpr())
-  )
-}
+  class State = MethodBase;
 
-pragma[nomagic]
-private DataFlow::Node trackSingletonMethodOnInstanceRec(
-  MethodBase method, string name, TypeTracker t, StepSummary summary
-) {
-  exists(DataFlow::Node mid | mid = trackSingletonMethodOnInstance(method, name, t) |
-    StepSummary::smallstep(mid, result, summary)
+  predicate start(DataFlow::Node start, MethodBase method) {
+    singletonMethodOnInstance(method, _, start.asExpr().getExpr())
+  }
+
+  predicate stepNoCall(DataFlow::Node nodeFrom, DataFlow::Node nodeTo, StepSummary summary) {
+    smallStepNoCall(nodeFrom, nodeTo, summary)
     or
-    paramReturnFlow(mid, result, summary)
+    localFlowStep(nodeFrom, nodeTo, summary)
+  }
+
+  predicate stepCall(DataFlow::Node nodeFrom, DataFlow::Node nodeTo, StepSummary summary) {
+    smallStepCall(nodeFrom, nodeTo, summary)
     or
-    localFlowStep(mid, result, summary)
-  )
+    paramReturnFlow(nodeFrom, nodeTo, summary)
+  }
+
+  class StateProj extends string {
+    StateProj() { singletonMethodOnInstance(_, this, _) }
+  }
+
+  StateProj stateProj(MethodBase method) { singletonMethodOnInstance(method, result, _) }
+
+  // Stop flow at redefinitions.
+  //
+  // Example:
+  // ```rb
+  // def x.foo; end
+  // def x.foo; end
+  // x.foo # <- we want to resolve this call to the second definition only
+  // ```
+  predicate filter(DataFlow::Node n, StateProj name) {
+    singletonMethodOnInstance(_, name, n.asExpr().getExpr())
+  }
 }
 
 pragma[nomagic]
 private DataFlow::Node trackSingletonMethodOnInstance(MethodBase method, string name) {
-  result = trackSingletonMethodOnInstance(method, name, TypeTracker::end())
+  result = CallGraphConstruction::Make<TrackSingletonMethodOnInstanceInput>::track(method) and
+  singletonMethodOnInstance(method, name, _)
 }
 
-/** Same as `isInstance`, but includes local must-flow through SSA definitions. */
-private predicate isInstanceLocalMustFlow(DataFlow::Node n, Module tp, boolean exact) {
-  isInstance(n, tp, exact)
+/** Holds if a `self` access may be the receiver of `call` directly inside module `m`. */
+pragma[nomagic]
+private predicate selfInModuleFlowsToMethodCallReceiver(DataFlowCall call, Module m, string method) {
+  exists(SelfLocalSourceNode self |
+    flowsToMethodCallReceiver(call, self, method) and
+    selfInModule(self.getVariable(), m)
+  )
+}
+
+/**
+ * Holds if a `self` access may be the receiver of `call` inside some singleton method, where
+ * that method belongs to `m` or one of `m`'s transitive super classes.
+ */
+pragma[nomagic]
+private predicate selfInSingletonMethodFlowsToMethodCallReceiver(
+  DataFlowCall call, Module m, string method
+) {
+  exists(SelfLocalSourceNode self, MethodBase caller |
+    flowsToMethodCallReceiver(call, self, method) and
+    selfInMethod(self.getVariable(), caller, m) and
+    singletonMethod(caller, _, _)
+  )
+}
+
+pragma[nomagic]
+private CfgScope getTargetSingleton(DataFlowCall call, string method) {
+  // singleton method defined on an instance, e.g.
+  // ```rb
+  // c = C.new
+  // def c.singleton; end # <- result
+  // c.singleton          # <- call
+  // ```
+  // or an `extend`ed instance, e.g.
+  // ```rb
+  // c = C.new
+  // module M
+  //   def instance; end  # <- result
+  // end
+  // c.extend M
+  // c.instance # <- call
+  // ```
+  exists(DataFlow::Node receiver |
+    methodCall(call, receiver, method) and
+    receiver = trackSingletonMethodOnInstance(result, method)
+  )
   or
-  exists(DataFlow::Node mid | isInstanceLocalMustFlow(mid, tp, exact) |
-    n.asExpr() = mid.(SsaDefinitionNode).getDefinition().getARead()
-    or
-    n.(SsaDefinitionNode).getDefinition().(Ssa::WriteDefinition).assigns(mid.asExpr())
-  )
-}
-
-/**
- * Holds if `ctx` targets `encl`, which is the enclosing callable of `call`, the receiver
- * of `call` is a parameter access, where the corresponding argument of `ctx` is `arg`.
- *
- * `name` is the name of the method being called by `call`.
- */
-pragma[nomagic]
-private predicate argFlowsToReceiver(
-  RelevantCall ctx, ArgumentNode arg, RelevantCall call, Callable encl, string name
-) {
-  exists(
-    ParameterNodeImpl p, SsaDefinitionNode ssaNode, ParameterPosition ppos, ArgumentPosition apos
-  |
-    // the receiver of `call` references `p`
-    LocalFlow::localFlowSsaParamInput(p, ssaNode) and
-    flowsToMethodCallReceiver(pragma[only_bind_into](call), pragma[only_bind_into](ssaNode),
-      pragma[only_bind_into](name)) and
-    // `p` is a parameter of `encl`,
-    encl = call.getScope() and
-    p.isParameterOf(TCfgScope(encl), ppos) and
-    // `ctx` targets `encl`
-    getTarget(ctx) = encl and
-    // `arg` is the argument for `p` in the call `ctx`
-    arg.sourceArgumentOf(ctx, apos) and
-    parameterMatch(ppos, apos)
-  )
-}
-
-/**
- * Holds if `ctx` targets `encl`, which is the enclosing callable of `call`, and
- * the receiver of `call` is a parameter access, where the corresponding argument
- * `arg` of `ctx` has type `tp`.
- *
- * `name` is the name of the method being called by `call`, and `exact` is pertaining
- * to the type of the argument.
- */
-pragma[nomagic]
-private predicate mayBenefitFromCallContextInstance(
-  RelevantCall ctx, RelevantCall call, ArgumentNode arg, Callable encl, Module tp, boolean exact,
-  string name
-) {
-  argFlowsToReceiver(ctx, pragma[only_bind_into](arg), call, encl, pragma[only_bind_into](name)) and
-  // `arg` has a relevant instance type
-  isInstanceLocalMustFlow(arg, tp, exact) and
-  exists(lookupMethod(tp, pragma[only_bind_into](name)))
-}
-
-/** Same as `resolveConstantReadAccess`, but includes local must-flow through SSA definitions. */
-private predicate resolveConstantReadAccessMustFlow(DataFlow::Node n, Module tp) {
-  tp = resolveConstantReadAccess(n.asExpr().getExpr())
-  or
-  exists(DataFlow::Node mid | resolveConstantReadAccessMustFlow(mid, tp) |
-    n.asExpr() = mid.(SsaDefinitionNode).getDefinition().getARead()
-    or
-    n.(SsaDefinitionNode).getDefinition().(Ssa::WriteDefinition).assigns(mid.asExpr())
-  )
-}
-
-/**
- * Holds if `ctx` targets `encl`, which is the enclosing callable of `call`, and
- * the receiver of `call` is a parameter access, where the corresponding argument
- * `arg` of `ctx` is a module access targeting a module of type `tp`.
- *
- * `name` is the name of the method being called by `call`, and `exact` is pertaining
- * to the type of the argument.
- */
-pragma[nomagic]
-private predicate mayBenefitFromCallContextSingleton(
-  RelevantCall ctx, RelevantCall call, ArgumentNode arg, Callable encl, Module tp, boolean exact,
-  string name
-) {
-  argFlowsToReceiver(ctx, pragma[only_bind_into](arg), call, encl, pragma[only_bind_into](name)) and
-  // `arg` has a relevant module type
-  (
-    resolveConstantReadAccessMustFlow(arg, tp) and
+  // singleton method defined on a module
+  // or an `extend`ed module, e.g.
+  // ```rb
+  // module M
+  //   def instance; end  # <- result
+  // end
+  // M.extend(M)
+  // M.instance           # <- call
+  // ```
+  exists(Module m, boolean exact | result = lookupSingletonMethod(m, method, exact) |
+    // ```rb
+    // def C.singleton; end # <- result
+    // C.singleton          # <- call
+    // ```
+    moduleFlowsToMethodCallReceiver(call, m, method) and
     exact = true
     or
-    exists(SelfVariable self | arg.asExpr().getExpr() = self.getAnAccess() |
-      selfInModule(self, tp) and
-      exact = true
-      or
-      exists(MethodBase caller |
-        selfInMethod(self, caller, tp) and
-        singletonMethod(caller, _, _) and
-        exact = false
-      )
+    // ```rb
+    // class C
+    //   def self.singleton; end # <- result
+    //   self.singleton          # <- call
+    // end
+    // ```
+    selfInModuleFlowsToMethodCallReceiver(call, m, method) and
+    exact = true
+    or
+    // ```rb
+    // class C
+    //   def self.singleton; end # <- result
+    //   def self.other
+    //     self.singleton        # <- call
+    //   end
+    // end
+    // ```
+    selfInSingletonMethodFlowsToMethodCallReceiver(call, m, method) and
+    exact = false
+  )
+}
+
+/**
+ * Holds if the parameter at position `pos` inside `encl` must flow to the receiver
+ * of `call`, which targets a method named `name`.
+ */
+pragma[nomagic]
+private predicate paramMustFlowToReceiver(
+  ParameterPosition pos, DataFlowCall call, DataFlowCallable encl, string name
+) {
+  exists(ParameterNodeImpl p |
+    // `p` is a parameter of `encl`,
+    p.isParameterOf(encl, pos) and
+    // the receiver of `call` references `p`
+    exists(DataFlow::Node receiver |
+      methodCall(pragma[only_bind_into](call), pragma[only_bind_into](receiver), name) and
+      LocalFlow::localMustFlowStep*(p, receiver)
     )
-  ) and
-  exists(lookupSingletonMethod(tp, pragma[only_bind_into](name), exact))
+  )
+}
+
+pragma[nomagic]
+private predicate mayBenefitFromCallContext(
+  DataFlowCall call, ParameterPosition pos, DataFlowCall ctx
+) {
+  paramMustFlowToReceiver(pos, call, viableCallable(ctx), _)
 }
 
 /**
  * Holds if the set of viable implementations that can be called by `call`
- * might be improved by knowing the call context. This is the case if the
- * receiver accesses a parameter of the enclosing callable `c` (including
- * the implicit `self` parameter).
+ * might be improved by knowing the call context.
  */
-predicate mayBenefitFromCallContext(DataFlowCall call, DataFlowCallable c) {
-  mayBenefitFromCallContextInstance(_, call.asCall(), _, c.asCallable(), _, _, _)
-  or
-  mayBenefitFromCallContextSingleton(_, call.asCall(), _, c.asCallable(), _, _, _)
+predicate mayBenefitFromCallContext(DataFlowCall call) { mayBenefitFromCallContext(call, _, _) }
+
+/**
+ * Holds if `ctx` targets the enclosing callable of `call`, the receiver of `call` is a
+ * parameter access (at position `ppos`), where the corresponding argument of `ctx`
+ * is `arg`.
+ *
+ * `name` is the name of the method being called by `call` and `source` is a
+ * `LocalSourceNode` that flows to `arg`.
+ */
+pragma[nomagic]
+private predicate argMustFlowToReceiver(
+  RelevantCall ctx, DataFlow::LocalSourceNode source, DataFlow::Node arg, ParameterPosition ppos,
+  DataFlowCall call, string name
+) {
+  exists(ArgumentPosition apos, DataFlowCallable encl |
+    paramMustFlowToReceiver(ppos, call, encl, name) and
+    parameterMatch(ppos, apos) and
+    source.flowsTo(arg)
+  |
+    encl = viableSourceCallableNonInit(TNormalCall(ctx)) and
+    arg.(ArgumentNode).sourceArgumentOf(ctx, apos)
+    or
+    encl.asCfgScope() = viableSourceCallableInit(ctx) and
+    if apos.isSelf()
+    then
+      // when we are targeting an initializer, the type of `self` inside the
+      // initializer will be the type of the `new` call itself, not the receiver
+      // of the `new` call
+      arg.asExpr() = ctx
+    else arg.(ArgumentNode).sourceArgumentOf(ctx, apos)
+    or
+    ctx.getAstNode() = encl.asLibraryCallable().getACallSimple() and
+    arg.(ArgumentNode).sourceArgumentOf(ctx, apos)
+  )
+}
+
+pragma[nomagic]
+private CfgScope viableImplInCallContextInitialize(RelevantCall call, RelevantCall ctx) {
+  exists(Module m, DataFlow::LocalSourceNode source |
+    argMustFlowToReceiver(ctx, pragma[only_bind_into](source), _, _, TNormalCall(call), "new") and
+    source = trackModuleAccess(m) and
+    result = getInitializeTarget(call) and
+    result = lookupMethod(m, "initialize")
+  )
+}
+
+pragma[nomagic]
+private CfgScope viableImplInCallContextInstance(DataFlowCall call, RelevantCall ctx) {
+  exists(Module m, DataFlow::LocalSourceNode source, string name, boolean exact |
+    argMustFlowToReceiver(ctx, pragma[only_bind_into](source), _, _, pragma[only_bind_into](call),
+      pragma[only_bind_into](name)) and
+    source = trackInstance(m, exact) and
+    result = getTargetInstance(call, pragma[only_bind_into](name)) and
+    result = lookupMethod(m, pragma[only_bind_into](name), exact)
+  )
+}
+
+pragma[nomagic]
+private CfgScope viableImplInCallContextSingleton(DataFlowCall call, RelevantCall ctx) {
+  exists(
+    Module m, DataFlow::LocalSourceNode source, DataFlow::Node arg, string name, boolean exact
+  |
+    argMustFlowToReceiver(ctx, pragma[only_bind_into](source), arg, _, pragma[only_bind_into](call),
+      pragma[only_bind_into](name)) and
+    result = getTargetSingleton(call, pragma[only_bind_into](name)) and
+    result = lookupSingletonMethod(m, pragma[only_bind_into](name), exact)
+  |
+    source = trackModuleAccess(m) and
+    exact = true
+    or
+    exists(SelfVariable self | arg.asExpr().getExpr() = self.getAnAccess() |
+      selfInModule(self, m) and
+      exact = true
+      or
+      exists(MethodBase caller |
+        selfInMethod(self, caller, m) and
+        singletonMethod(caller, _, _) and
+        exact = false
+      )
+    )
+  )
 }
 
 /**
@@ -1093,36 +1184,27 @@ predicate mayBenefitFromCallContext(DataFlowCall call, DataFlowCallable c) {
  */
 pragma[nomagic]
 DataFlowCallable viableImplInCallContext(DataFlowCall call, DataFlowCall ctx) {
-  mayBenefitFromCallContext(call, _) and
-  (
-    // `ctx` can provide a potentially better type bound
-    exists(RelevantCall call0, Callable res |
-      call0 = call.asCall() and
-      res = result.asCallable() and
-      res = getTarget(call0) and // make sure to not include e.g. private methods
-      exists(Module m, boolean exact, string name |
-        mayBenefitFromCallContextInstance(ctx.asCall(), pragma[only_bind_into](call0), _, _,
-          pragma[only_bind_into](m), exact, pragma[only_bind_into](name)) and
-        res = lookupMethod(m, name, exact)
-        or
-        mayBenefitFromCallContextSingleton(ctx.asCall(), pragma[only_bind_into](call0), _, _,
-          pragma[only_bind_into](m), exact, pragma[only_bind_into](name)) and
-        res = lookupSingletonMethod(m, name, exact)
-      )
-    )
+  // `ctx` can provide a potentially better type bound
+  exists(CfgScope res | res = result.asCfgScope() |
+    res = viableImplInCallContextInitialize(call.asCall(), ctx.asCall())
     or
-    // `ctx` cannot provide a type bound
-    exists(RelevantCall call0, RelevantCall ctx0, ArgumentNode arg, string name |
-      call0 = call.asCall() and
-      ctx0 = ctx.asCall() and
-      argFlowsToReceiver(ctx0, arg, call0, _, name) and
-      not mayBenefitFromCallContextInstance(ctx0, call0, arg, _, _, _, name) and
-      not mayBenefitFromCallContextSingleton(ctx0, call0, arg, _, _, _, name) and
-      result = viableSourceCallable(call)
+    res = viableImplInCallContextInstance(call, ctx.asCall())
+    or
+    res = viableImplInCallContextSingleton(call, ctx.asCall())
+  )
+  or
+  exists(ParameterPosition pos | mayBenefitFromCallContext(call, pos, ctx) |
+    // `ctx` cannot provide a type bound, and the receiver of the call is `self`;
+    // in this case, still apply an open-world assumption
+    pos.isSelf() and
+    result = viableSourceCallable(call) and
+    not exists(RelevantCall ctx0 | ctx0 = ctx.asCall() |
+      exists(viableImplInCallContextInitialize(call.asCall(), ctx0)) or
+      exists(viableImplInCallContextInstance(call, ctx0)) or
+      exists(viableImplInCallContextSingleton(call, ctx0))
     )
     or
     // library calls should always be able to resolve
-    argFlowsToReceiver(ctx.asCall(), _, call.asCall(), _, _) and
     result = viableLibraryCallable(call)
   )
 }
@@ -1133,6 +1215,9 @@ predicate exprNodeReturnedFrom = exprNodeReturnedFromCached/2;
 class ParameterPosition extends TParameterPosition {
   /** Holds if this position represents a `self` parameter. */
   predicate isSelf() { this = TSelfParameterPosition() }
+
+  /** Holds if this position represents a reference to a lambda itself. Only used for tracking flow through captured variables. */
+  predicate isLambdaSelf() { this = TLambdaSelfParameterPosition() }
 
   /** Holds if this position represents a block parameter. */
   predicate isBlock() { this = TBlockParameterPosition() }
@@ -1149,6 +1234,21 @@ class ParameterPosition extends TParameterPosition {
   /** Holds if this position represents a hash-splat parameter. */
   predicate isHashSplat() { this = THashSplatParameterPosition() }
 
+  /** Holds if this position represents a synthetic hash-splat parameter. */
+  predicate isSynthHashSplat() { this = TSynthHashSplatParameterPosition() }
+
+  /** Holds if this position represents a splat parameter at position `n`. */
+  predicate isSplat(int n) { this = TSplatParameterPosition(n) }
+
+  /**
+   * Holds if this position represents a synthetic splat parameter.
+   *
+   * `actualSplatPos` indicates the position of the (unique) actual splat
+   * parameter belonging to the same method, with `-1` representing no actual
+   * splat parameter.
+   */
+  predicate isSynthSplat(int actualSplatPos) { this = TSynthSplatParameterPosition(actualSplatPos) }
+
   /**
    * Holds if this position represents any parameter, except `self` parameters. This
    * includes both positional, named, and block parameters.
@@ -1162,6 +1262,8 @@ class ParameterPosition extends TParameterPosition {
   string toString() {
     this.isSelf() and result = "self"
     or
+    this.isLambdaSelf() and result = "lambda self"
+    or
     this.isBlock() and result = "block"
     or
     exists(int pos | this.isPositional(pos) and result = "position " + pos)
@@ -1172,9 +1274,19 @@ class ParameterPosition extends TParameterPosition {
     or
     this.isHashSplat() and result = "**"
     or
+    this.isSynthHashSplat() and result = "synthetic **"
+    or
     this.isAny() and result = "any"
     or
     this.isAnyNamed() and result = "any-named"
+    or
+    exists(int pos | this.isSplat(pos) and result = "* (position " + pos + ")")
+    or
+    exists(int actualSplatPos, string suffix |
+      this.isSynthSplat(actualSplatPos) and
+      result = "synthetic *" + suffix and
+      if actualSplatPos = -1 then suffix = "" else suffix = " (actual at " + actualSplatPos + ")"
+    )
   }
 }
 
@@ -1182,6 +1294,9 @@ class ParameterPosition extends TParameterPosition {
 class ArgumentPosition extends TArgumentPosition {
   /** Holds if this position represents a `self` argument. */
   predicate isSelf() { this = TSelfArgumentPosition() }
+
+  /** Holds if this position represents a lambda `self` argument. Only used for tracking flow through captured variables. */
+  predicate isLambdaSelf() { this = TLambdaSelfArgumentPosition() }
 
   /** Holds if this position represents a block argument. */
   predicate isBlock() { this = TBlockArgumentPosition() }
@@ -1201,15 +1316,29 @@ class ArgumentPosition extends TArgumentPosition {
   /** Holds if this position represents any positional parameter. */
   predicate isAnyNamed() { this = TAnyKeywordArgumentPosition() }
 
-  /**
-   * Holds if this position represents a synthesized argument containing all keyword
-   * arguments wrapped in a hash.
-   */
+  /** Holds if this position represents a hash-splat argument. */
   predicate isHashSplat() { this = THashSplatArgumentPosition() }
+
+  /** Holds if this position represents a synthetic hash-splat argument. */
+  predicate isSynthHashSplat() { this = TSynthHashSplatArgumentPosition() }
+
+  /** Holds if this position represents a splat argument at position `n`. */
+  predicate isSplat(int n) { this = TSplatArgumentPosition(n) }
+
+  /**
+   * Holds if this position represents a synthetic splat argument.
+   *
+   * `actualSplatPos` indicates the position of the (unique) actual splat
+   * argument belonging to the same call, with `-1` representing no actual
+   * splat argument.
+   */
+  predicate isSynthSplat(int actualSplatPos) { this = TSynthSplatArgumentPosition(actualSplatPos) }
 
   /** Gets a textual representation of this position. */
   string toString() {
     this.isSelf() and result = "self"
+    or
+    this.isLambdaSelf() and result = "lambda self"
     or
     this.isBlock() and result = "block"
     or
@@ -1222,19 +1351,37 @@ class ArgumentPosition extends TArgumentPosition {
     this.isAnyNamed() and result = "any-named"
     or
     this.isHashSplat() and result = "**"
+    or
+    this.isSynthHashSplat() and result = "synthetic **"
+    or
+    exists(int pos | this.isSplat(pos) and result = "* (position " + pos + ")")
+    or
+    exists(int actualSplatPos, string suffix |
+      this.isSynthSplat(actualSplatPos) and
+      result = "synthetic *" + suffix and
+      if actualSplatPos = -1 then suffix = "" else suffix = " (actual at " + actualSplatPos + ")"
+    )
   }
 }
 
 pragma[nomagic]
-private predicate parameterPositionIsNotSelf(ParameterPosition ppos) { not ppos.isSelf() }
+private predicate parameterPositionIsNotSelf(ParameterPosition ppos) {
+  not ppos.isSelf() and
+  not ppos.isLambdaSelf()
+}
 
 pragma[nomagic]
-private predicate argumentPositionIsNotSelf(ArgumentPosition apos) { not apos.isSelf() }
+private predicate argumentPositionIsNotSelf(ArgumentPosition apos) {
+  not apos.isSelf() and
+  not apos.isLambdaSelf()
+}
 
 /** Holds if arguments at position `apos` match parameters at position `ppos`. */
 pragma[nomagic]
 predicate parameterMatch(ParameterPosition ppos, ArgumentPosition apos) {
   ppos.isSelf() and apos.isSelf()
+  or
+  ppos.isLambdaSelf() and apos.isLambdaSelf()
   or
   ppos.isBlock() and apos.isBlock()
   or
@@ -1246,7 +1393,31 @@ predicate parameterMatch(ParameterPosition ppos, ArgumentPosition apos) {
   or
   exists(string name | ppos.isKeyword(name) and apos.isKeyword(name))
   or
-  ppos.isHashSplat() and apos.isHashSplat()
+  (ppos.isHashSplat() or ppos.isSynthHashSplat()) and
+  (apos.isHashSplat() or apos.isSynthHashSplat()) and
+  // prevent synthetic hash-splat parameters from matching synthetic hash-splat
+  // arguments when direct keyword matching is possible
+  not (ppos.isSynthHashSplat() and apos.isSynthHashSplat())
+  or
+  exists(int pos |
+    (
+      ppos.isSplat(pos)
+      or
+      ppos.isSynthSplat(_) and
+      pos = 0
+    ) and
+    (
+      apos.isSplat(pos)
+      or
+      apos.isSynthSplat(_) and pos = 0
+    )
+  ) and
+  // prevent synthetic splat parameters from matching synthetic splat arguments
+  // when direct positional matching is possible
+  not exists(int actualSplatPos |
+    ppos.isSynthSplat(actualSplatPos) and
+    apos.isSynthSplat(actualSplatPos)
+  )
   or
   ppos.isAny() and argumentPositionIsNotSelf(apos)
   or

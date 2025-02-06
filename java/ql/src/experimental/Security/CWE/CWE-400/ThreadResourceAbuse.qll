@@ -1,31 +1,15 @@
 /** Provides sink models and classes related to pausing thread operations. */
+deprecated module;
 
 import java
 import semmle.code.java.dataflow.DataFlow
 private import semmle.code.java.dataflow.ExternalFlow
+import semmle.code.java.arithmetic.Overflow
 import semmle.code.java.dataflow.FlowSteps
 import semmle.code.java.controlflow.Guards
 
-/** `java.lang.Math` data model for value comparison in the new CSV format. */
-private class MathCompDataModel extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "java.lang;Math;false;min;;;Argument[0..1];ReturnValue;value;manual",
-        "java.lang;Math;false;max;;;Argument[0..1];ReturnValue;value;manual"
-      ]
-  }
-}
-
-/** Thread pause data model in the new CSV format. */
-private class PauseThreadDataModel extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "java.lang;Thread;true;sleep;;;Argument[0];thread-pause;manual",
-        "java.util.concurrent;TimeUnit;true;sleep;;;Argument[0];thread-pause;manual"
-      ]
-  }
+private class ActivateModels extends ActiveExperimentalModels {
+  ActivateModels() { this = "thread-resource-abuse" }
 }
 
 /** A sink representing methods pausing a thread. */
@@ -78,4 +62,35 @@ private class ApacheFileUploadProgressUpdateStep extends AdditionalValueStep {
       succ.(DataFlow::InstanceParameterNode).getEnclosingCallable() = m
     )
   }
+}
+
+/**
+ * A unit class for adding additional taint steps.
+ *
+ * Extend this class to add additional taint steps that should apply to the `ThreadResourceAbuseConfig`.
+ */
+class ThreadResourceAbuseAdditionalTaintStep extends Unit {
+  /**
+   * Holds if the step from `node1` to `node2` should be considered a taint
+   * step for the `ThreadResourceAbuseConfig` configuration.
+   */
+  abstract predicate step(DataFlow::Node node1, DataFlow::Node node2);
+}
+
+/** A set of additional taint steps to consider when taint tracking thread resource abuse related data flows. */
+private class DefaultThreadResourceAbuseAdditionalTaintStep extends ThreadResourceAbuseAdditionalTaintStep
+{
+  override predicate step(DataFlow::Node node1, DataFlow::Node node2) {
+    threadResourceAbuseArithmeticTaintStep(node1, node2)
+  }
+}
+
+/**
+ * Holds if the step `node1` -> `node2` is an additional taint-step that performs an addition, multiplication,
+ * subtraction, or division.
+ */
+private predicate threadResourceAbuseArithmeticTaintStep(
+  DataFlow::Node fromNode, DataFlow::Node toNode
+) {
+  toNode.asExpr().(ArithExpr).getAnOperand() = fromNode.asExpr()
 }

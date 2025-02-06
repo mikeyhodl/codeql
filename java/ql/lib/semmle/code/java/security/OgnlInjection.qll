@@ -2,6 +2,7 @@
 
 import java
 private import semmle.code.java.dataflow.DataFlow
+private import semmle.code.java.dataflow.FlowSinks
 private import semmle.code.java.dataflow.ExternalFlow
 private import semmle.code.java.frameworks.MyBatis
 
@@ -10,7 +11,7 @@ private import semmle.code.java.frameworks.MyBatis
  *
  * Extend this class to add your own OGNL injection sinks.
  */
-abstract class OgnlInjectionSink extends DataFlow::Node { }
+abstract class OgnlInjectionSink extends ApiSinkNode { }
 
 /**
  * A unit class for adding additional taint steps.
@@ -23,29 +24,6 @@ class OgnlInjectionAdditionalTaintStep extends Unit {
    * step for OGNL injection taint configurations.
    */
   abstract predicate step(DataFlow::Node node1, DataFlow::Node node2);
-}
-
-private class DefaultOgnlInjectionSinkModel extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "org.apache.commons.ognl;Ognl;false;getValue;;;Argument[0];ognl-injection;manual",
-        "org.apache.commons.ognl;Ognl;false;setValue;;;Argument[0];ognl-injection;manual",
-        "org.apache.commons.ognl;Node;true;getValue;;;Argument[-1];ognl-injection;manual",
-        "org.apache.commons.ognl;Node;true;setValue;;;Argument[-1];ognl-injection;manual",
-        "org.apache.commons.ognl.enhance;ExpressionAccessor;true;get;;;Argument[-1];ognl-injection;manual",
-        "org.apache.commons.ognl.enhance;ExpressionAccessor;true;set;;;Argument[-1];ognl-injection;manual",
-        "ognl;Ognl;false;getValue;;;Argument[0];ognl-injection;manual",
-        "ognl;Ognl;false;setValue;;;Argument[0];ognl-injection;manual",
-        "ognl;Node;false;getValue;;;Argument[-1];ognl-injection;manual",
-        "ognl;Node;false;setValue;;;Argument[-1];ognl-injection;manual",
-        "ognl.enhance;ExpressionAccessor;true;get;;;Argument[-1];ognl-injection;manual",
-        "ognl.enhance;ExpressionAccessor;true;set;;;Argument[-1];ognl-injection;manual",
-        "com.opensymphony.xwork2.ognl;OgnlUtil;false;getValue;;;Argument[0];ognl-injection;manual",
-        "com.opensymphony.xwork2.ognl;OgnlUtil;false;setValue;;;Argument[0];ognl-injection;manual",
-        "com.opensymphony.xwork2.ognl;OgnlUtil;false;callMethod;;;Argument[0];ognl-injection;manual"
-      ]
-  }
 }
 
 private class DefaultOgnlInjectionSink extends OgnlInjectionSink {
@@ -74,7 +52,7 @@ private class TypeExpressionAccessor extends Interface {
  * i.e. `Ognl.parseExpression(tainted)` or `Ognl.compileExpression(tainted)`.
  */
 private predicate parseCompileExpressionStep(DataFlow::Node n1, DataFlow::Node n2) {
-  exists(MethodAccess ma, Method m, int index |
+  exists(MethodCall ma, Method m, int index |
     n1.asExpr() = ma.getArgument(index) and
     n2.asExpr() = ma and
     ma.getMethod() = m and
@@ -91,7 +69,7 @@ private predicate parseCompileExpressionStep(DataFlow::Node n1, DataFlow::Node n
  * i.e. `Node.getAccessor()`.
  */
 private predicate getAccessorStep(DataFlow::Node n1, DataFlow::Node n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     ma.getMethod() = m and
     m.getDeclaringType().getAnAncestor() instanceof TypeNode and
     m.hasName("getAccessor")
@@ -106,7 +84,7 @@ private predicate getAccessorStep(DataFlow::Node n1, DataFlow::Node n2) {
  * in a `setExpression` call, i.e. `accessor.setExpression(tainted)`
  */
 private predicate setExpressionStep(DataFlow::Node n1, DataFlow::Node n2) {
-  exists(MethodAccess ma, Method m |
+  exists(MethodCall ma, Method m |
     ma.getMethod() = m and
     m.hasName("setExpression") and
     m.getDeclaringType().getAnAncestor() instanceof TypeExpressionAccessor

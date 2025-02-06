@@ -4,7 +4,6 @@
  */
 
 import java
-private import semmle.code.java.dataflow.ExternalFlow
 private import semmle.code.java.dataflow.DataFlow
 private import semmle.code.java.frameworks.spring.SpringController
 private import semmle.code.java.security.XSS as XSS
@@ -41,107 +40,6 @@ class SpringResponseEntityBodyBuilder extends Interface {
 /** The class `org.springframework.http.HttpHeaders`. */
 class SpringHttpHeaders extends Class {
   SpringHttpHeaders() { this.hasQualifiedName("org.springframework.http", "HttpHeaders") }
-}
-
-private class UrlOpenSink extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "org.springframework.http;RequestEntity;false;get;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;post;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;head;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;delete;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;options;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;patch;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;put;;;Argument[0];open-url;manual",
-        "org.springframework.http;RequestEntity;false;method;;;Argument[1];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(HttpMethod,URI);;Argument[1];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(MultiValueMap,HttpMethod,URI);;Argument[2];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(Object,HttpMethod,URI);;Argument[2];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(Object,HttpMethod,URI,Type);;Argument[2];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(Object,MultiValueMap,HttpMethod,URI);;Argument[3];open-url;manual",
-        "org.springframework.http;RequestEntity;false;RequestEntity;(Object,MultiValueMap,HttpMethod,URI,Type);;Argument[3];open-url;manual"
-      ]
-  }
-}
-
-private class SpringHttpFlowStep extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        //"package;type;overrides;name;signature;ext;inputspec;outputspec;kind",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(Object);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(Object,MultiValueMap);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(Object,MultiValueMap);;Argument[1].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(Object,MultiValueMap);;Argument[1].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(MultiValueMap);;Argument[0].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;HttpEntity;(MultiValueMap);;Argument[0].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;HttpEntity;true;getBody;;;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpEntity;true;getHeaders;;;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,HttpStatus);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,HttpStatus);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,HttpStatus);;Argument[1].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,HttpStatus);;Argument[1].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(MultiValueMap,HttpStatus);;Argument[0].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(MultiValueMap,HttpStatus);;Argument[0].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,int);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,int);;Argument[1].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;ResponseEntity;(Object,MultiValueMap,int);;Argument[1].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity;true;of;(Optional);;Argument[0].Element;ReturnValue;taint;manual",
-        "org.springframework.http;ResponseEntity;true;ok;(Object);;Argument[0];ReturnValue;taint;manual",
-        "org.springframework.http;ResponseEntity;true;created;(URI);;Argument[0];ReturnValue;taint;manual",
-        "org.springframework.http;ResponseEntity$BodyBuilder;true;contentLength;(long);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$BodyBuilder;true;contentType;(MediaType);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$BodyBuilder;true;body;(Object);;Argument[-1..0];ReturnValue;taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;allow;(HttpMethod[]);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;eTag;(String);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;eTag;(String);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;header;(String,String[]);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;header;(String,String[]);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;header;(String,String[]);;Argument[1].ArrayElement;Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;headers;(Consumer);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;headers;(HttpHeaders);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;headers;(HttpHeaders);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;lastModified;;;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;location;(URI);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;location;(URI);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;varyBy;(String[]);;Argument[-1];ReturnValue;value;manual",
-        "org.springframework.http;ResponseEntity$HeadersBuilder;true;build;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;RequestEntity;true;getUrl;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;HttpHeaders;(MultiValueMap);;Argument[0].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;HttpHeaders;(MultiValueMap);;Argument[0].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;get;(Object);;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getAccessControlAllowHeaders;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getAccessControlAllowOrigin;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getAccessControlExposeHeaders;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getAccessControlRequestHeaders;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getCacheControl;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getConnection;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getETag;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getETagValuesAsList;(String);;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getFieldValues;(String);;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getFirst;(String);;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getIfMatch;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getIfNoneMatch;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getHost;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getLocation;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getOrEmpty;(Object);;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getOrigin;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getPragma;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getUpgrade;();;Argument[-1];ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getValuesAsList;(String);;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;getVary;();;Argument[-1];ReturnValue.Element;taint;manual",
-        "org.springframework.http;HttpHeaders;true;add;(String,String);;Argument[0..1];Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;set;(String,String);;Argument[0..1];Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;addAll;(MultiValueMap);;Argument[0].MapKey;Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;addAll;(MultiValueMap);;Argument[0].MapValue.Element;Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;addAll;(String,List);;Argument[0];Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;addAll;(String,List);;Argument[1].Element;Argument[-1];taint;manual",
-        "org.springframework.http;HttpHeaders;true;formatHeaders;(MultiValueMap);;Argument[0].MapKey;ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;formatHeaders;(MultiValueMap);;Argument[0].MapValue.Element;ReturnValue;taint;manual",
-        "org.springframework.http;HttpHeaders;true;encodeBasicAuth;(String,String,Charset);;Argument[0..1];ReturnValue;taint;manual"
-      ]
-  }
 }
 
 private predicate specifiesContentType(SpringRequestMappingMethod method) {
@@ -254,26 +152,42 @@ private string getSpringConstantContentType(FieldAccess e) {
   )
 }
 
+private string getContentTypeString(Expr e) {
+  result = e.(CompileTimeConstantExpr).getStringValue() or
+  result = getSpringConstantContentType(e)
+}
+
+pragma[nomagic]
+private predicate contentTypeString(string s) { s = getContentTypeString(_) }
+
+pragma[nomagic]
+private predicate isXssVulnerableContentTypeString(string s) {
+  contentTypeString(s) and XSS::isXssVulnerableContentType(s)
+}
+
+pragma[nomagic]
+private predicate isXssSafeContentTypeString(string s) {
+  contentTypeString(s) and XSS::isXssSafeContentType(s)
+}
+
 private predicate isXssVulnerableContentTypeExpr(Expr e) {
-  XSS::isXssVulnerableContentType(e.(CompileTimeConstantExpr).getStringValue()) or
-  XSS::isXssVulnerableContentType(getSpringConstantContentType(e))
+  isXssVulnerableContentTypeString(getContentTypeString(e))
 }
 
 private predicate isXssSafeContentTypeExpr(Expr e) {
-  XSS::isXssSafeContentType(e.(CompileTimeConstantExpr).getStringValue()) or
-  XSS::isXssSafeContentType(getSpringConstantContentType(e))
+  isXssSafeContentTypeString(getContentTypeString(e))
 }
 
 private DataFlow::Node getABodyBuilderWithExplicitContentType(Expr contentType) {
   result.asExpr() =
-    any(MethodAccess ma |
+    any(MethodCall ma |
       ma.getCallee()
           .hasQualifiedName("org.springframework.http", "ResponseEntity$BodyBuilder", "contentType") and
       contentType = ma.getArgument(0)
     )
   or
   result.asExpr() =
-    any(MethodAccess ma |
+    any(MethodCall ma |
       ma.getQualifier() = getABodyBuilderWithExplicitContentType(contentType).asExpr() and
       ma.getType()
           .(RefType)
@@ -294,7 +208,7 @@ private DataFlow::Node getAVulnerableBodyBuilder() {
 private class SanitizedBodyCall extends XSS::XssSanitizer {
   SanitizedBodyCall() {
     this.asExpr() =
-      any(MethodAccess ma |
+      any(MethodCall ma |
         ma.getQualifier() = getASanitizedBodyBuilder().asExpr() and
         ma.getCallee().hasName("body")
       ).getArgument(0)
@@ -312,7 +226,7 @@ private class SanitizedBodyCall extends XSS::XssSanitizer {
 private class ExplicitlyVulnerableBodyArgument extends XSS::XssSinkBarrier {
   ExplicitlyVulnerableBodyArgument() {
     this.asExpr() =
-      any(MethodAccess ma |
+      any(MethodCall ma |
         ma.getQualifier() = getAVulnerableBodyBuilder().asExpr() and
         ma.getCallee().hasName("body")
       ).getArgument(0)

@@ -4,5 +4,5 @@ from Method m, Method overrider
 where
   m.getAnOverrider() = overrider and
   m.getFile().getStem() = "CovariantReturn"
-select m.getQualifiedName(), m.getReturnType().toString(), overrider.getQualifiedName(),
-  overrider.getReturnType().toString()
+select m.getFullyQualifiedNameDebug(), m.getReturnType().toString(),
+  overrider.getFullyQualifiedNameDebug(), overrider.getReturnType().toString()

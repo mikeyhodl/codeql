@@ -9,10 +9,28 @@ module Hapi {
   /**
    * An expression that creates a new Hapi server.
    */
-  class ServerDefinition extends Http::Servers::StandardServerDefinition, DataFlow::NewNode {
+  class ServerDefinition extends Http::Servers::StandardServerDefinition, DataFlow::Node {
     ServerDefinition() {
       // `server = new Hapi.Server()`
       this = DataFlow::moduleMember("hapi", "Server").getAnInstantiation()
+      or
+      // `server = Glue.compose(manifest, composeOptions)`
+      this = DataFlow::moduleMember("@hapi/glue", "compose").getAnInvocation()
+      or
+      // `register (server, options)`
+      // `module.exports.plugin = {register, pkg};`
+      this =
+        any(Module m)
+            .getAnExportedValue("plugin")
+            .getALocalSource()
+            .getAPropertySource("register")
+            .getAFunctionValue()
+            .getParameter(0)
+      or
+      // `const after = function (server) {...};`
+      // `server.dependency('name', after);`
+      this =
+        any(ServerDefinition s).ref().getAMethodCall("dependency").getABoundCallbackParameter(1, 0)
     }
   }
 
@@ -70,26 +88,10 @@ module Hapi {
   }
 
   /**
-   * DEPRECATED: Use `ResponseNode` instead.
-   * A Hapi response expression.
-   */
-  deprecated class ResponseExpr extends HTTP::Servers::StandardResponseExpr {
-    ResponseExpr() { this.flow() instanceof ResponseNode }
-  }
-
-  /**
    * A Hapi response node.
    */
   class ResponseNode extends Http::Servers::StandardResponseNode {
     override ResponseSource src;
-  }
-
-  /**
-   * DEPRECATED: Use `RequestNode` instead.
-   * An Hapi request expression.
-   */
-  deprecated class RequestExpr extends HTTP::Servers::StandardRequestExpr {
-    RequestExpr() { this.flow() instanceof RequestNode }
   }
 
   /**
@@ -123,7 +125,7 @@ module Hapi {
         kind = "parameter" and
         exists(DataFlow::PropRead query |
           // `request.query.name`
-          query.accesses(request, "query") and
+          query.accesses(request, ["query", "params"]) and
           this.(DataFlow::PropRead).accesses(query, _)
         )
         or
@@ -131,7 +133,7 @@ module Hapi {
           // `request.url.path`
           kind = "url" and
           url.accesses(request, "url") and
-          this.(DataFlow::PropRead).accesses(url, "path")
+          this.(DataFlow::PropRead).accesses(url, ["path", "origin"])
         )
         or
         exists(DataFlow::PropRead state |
@@ -209,6 +211,17 @@ module Hapi {
         // server.ext('/', fun)
         this.getMethodName() = "ext" and
         handler = this.getArgument(1)
+        or
+        // server.route([{ handler(request){}])
+        this.getMethodName() = "route" and
+        handler =
+          this.getArgument(0)
+              .getALocalSource()
+              .(DataFlow::ArrayCreationNode)
+              .getAnElement()
+              .getALocalSource()
+              .getAPropertySource("handler")
+              .getAFunctionValue()
       )
     }
 
@@ -226,8 +239,6 @@ module Hapi {
     pragma[noinline]
     private DataFlow::Node getRouteHandler() { result = handler }
 
-    deprecated Expr getRouteHandlerExpr() { result = handler.asExpr() }
-
     override DataFlow::Node getServer() { result = server }
   }
 
@@ -240,7 +251,7 @@ module Hapi {
     RouteHandlerCandidate() {
       exists(string request, string responseToolkit |
         (request = "request" or request = "req") and
-        responseToolkit = "h" and
+        responseToolkit = ["h", "hapi"] and
         // heuristic: parameter names match the Hapi documentation
         astNode.getNumParameter() = 2 and
         astNode.getParameter(0).getName() = request and
@@ -256,7 +267,8 @@ module Hapi {
    * A function that looks like a Hapi route handler and flows to a route setup.
    */
   private class TrackedRouteHandlerCandidateWithSetup extends RouteHandler,
-    Http::Servers::StandardRouteHandler, DataFlow::FunctionNode {
+    Http::Servers::StandardRouteHandler, DataFlow::FunctionNode
+  {
     TrackedRouteHandlerCandidateWithSetup() { this = any(RouteSetup s).getARouteHandler() }
   }
 

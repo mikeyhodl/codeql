@@ -37,26 +37,14 @@ class Annotation extends @annotation, Expr {
   }
 
   /** Gets the annotation type declaration for this annotation. */
-  override AnnotationType getType() { result = Expr.super.getType() }
+  override AnnotationType getType() {
+    result = Expr.super.getType().(Interface).getSourceDeclaration()
+  }
 
   /** Gets the annotation element with the specified `name`. */
   AnnotationElement getAnnotationElement(string name) {
     result = this.getType().getAnnotationElement(name)
   }
-
-  /**
-   * DEPRECATED: Getting the value of _any_ annotation element is error-prone because
-   * it could lead to selecting the value of the wrong element by accident (for example
-   * when an annotation type is extended in the future). Prefer the predicate `getValue(string)`
-   * and explicitly specify the element name. Use `getValue(_)` if it is really desired to
-   * get the value of any element.
-   *
-   * Gets a value of an annotation element. This includes default values in case
-   * no explicit value is specified. For elements with an array value type this
-   * might have an `ArrayInit` as result. To properly handle array values, prefer
-   * the predicate `getAnArrayValue`.
-   */
-  deprecated Expr getAValue() { filteredAnnotValue(this, _, result) }
 
   /**
    * Gets the value of the annotation element with the specified `name`.
@@ -156,11 +144,6 @@ class Annotation extends @annotation, Expr {
   Expr getAnArrayValue(string name) { result = this.getArrayValue(name, _) }
 
   /**
-   * DEPRECATED: Predicate has been renamed to `getAnArrayValue`
-   */
-  deprecated Expr getAValue(string name) { result = this.getAnArrayValue(name) }
-
-  /**
    * Gets a value of the annotation element with the specified `name`, which must be declared as an enum
    * type array. This includes default values in case no explicit value is specified.
    *
@@ -249,7 +232,7 @@ private predicate filteredAnnotValue(Annotation a, Method m, Expr val) {
 
 private predicate sourceAnnotValue(Annotation a, Method m, Expr val) {
   annotValue(a, m, val) and
-  val.getFile().getExtension() = "java"
+  val.getFile().isSourceFile()
 }
 
 /** An abstract representation of language elements that can be annotated. */
@@ -272,7 +255,7 @@ class Annotatable extends Element {
    */
   predicate hasAnnotation(string package, string name) {
     exists(AnnotationType at | at = this.getAnAnnotation().getType() |
-      at.nestedName() = name and at.getPackage().getName() = package
+      at.getNestedName() = name and at.getPackage().getName() = package
     )
   }
 

@@ -36,8 +36,6 @@ module Templating {
 
   /** A placeholder tag for a templating engine. */
   class TemplatePlaceholderTag extends @template_placeholder_tag, Locatable {
-    override Location getLocation() { hasLocation(this, result) }
-
     override string toString() { template_placeholder_tag_info(this, _, result) }
 
     /** Gets the full text of the template tag, including delimiters. */
@@ -107,7 +105,12 @@ module Templating {
      * Gets the innermost JavaScript expression containing this template tag, if any.
      */
     pragma[nomagic]
-    Expr getEnclosingExpr() { expr_contains_template_tag_location(result, this.getLocation()) }
+    Expr getEnclosingExpr() {
+      exists(@location loc |
+        hasLocation(this, loc) and
+        expr_contains_template_tag_location(result, loc)
+      )
+    }
   }
 
   /**
@@ -174,23 +177,19 @@ module Templating {
   /**
    * A place where a template is instantiated or rendered.
    */
-  class TemplateInstantiation extends DataFlow::Node {
-    TemplateInstantiation::Range range;
-
-    TemplateInstantiation() { this = range }
-
+  class TemplateInstantiation extends DataFlow::Node instanceof TemplateInstantiation::Range {
     /** Gets a data flow node that refers to the instantiated template string, if any. */
-    DataFlow::SourceNode getOutput() { result = range.getOutput() }
+    DataFlow::SourceNode getOutput() { result = super.getOutput() }
 
     /** Gets a data flow node that refers a template file to be instantiated, if any. */
-    DataFlow::Node getTemplateFileNode() { result = range.getTemplateFileNode() }
+    DataFlow::Node getTemplateFileNode() { result = super.getTemplateFileNode() }
 
     /** Gets a data flow node that refers to an object whose properties become variables in the template. */
-    DataFlow::Node getTemplateParamsNode() { result = range.getTemplateParamsNode() }
+    DataFlow::Node getTemplateParamsNode() { result = super.getTemplateParamsNode() }
 
     /** Gets a data flow node that provides the value for the template variable at the given access path. */
     DataFlow::Node getTemplateParamForValue(string accessPath) {
-      result = range.getTemplateParamForValue(accessPath)
+      result = super.getTemplateParamForValue(accessPath)
     }
 
     /** Gets the template file instantiated here, if any. */
@@ -203,7 +202,7 @@ module Templating {
      *
      * If not known, the relevant syntax will be determined by a heuristic.
      */
-    TemplateSyntax getTemplateSyntax() { result = range.getTemplateSyntax() }
+    TemplateSyntax getTemplateSyntax() { result = super.getTemplateSyntax() }
   }
 
   /** Companion module to the `TemplateInstantiation` class. */
@@ -582,6 +581,22 @@ module Templating {
     override string getAFileExtension() { result = "ejs" }
 
     override string getAPackageName() { result = "ejs" }
+  }
+
+  /**
+   * doT-style syntax, using `{{! }}` for safe interpolation, and `{{= }}` for
+   * unsafe interpolation.
+   */
+  private class DotStyleSyntax extends TemplateSyntax {
+    DotStyleSyntax() { this = "dot" }
+
+    override string getRawInterpolationRegexp() { result = "(?s)\\{\\{!(.*?)\\}\\}" }
+
+    override string getEscapingInterpolationRegexp() { result = "(?s)\\{\\{=(.*?)\\}\\}" }
+
+    override string getAFileExtension() { result = "dot" }
+
+    override string getAPackageName() { result = "dot" }
   }
 
   private TemplateSyntax getOwnTemplateSyntaxInFolder(Folder f) {

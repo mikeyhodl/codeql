@@ -4,8 +4,9 @@
 
 import csharp
 
-from Destructor c
+from Destructor c, string qualifier, string name
 where
-  c.getDeclaringType().getName() = "Class" and
-  c.getDeclaringType().getNamespace().getQualifiedName() = "Constructors"
-select c, c.getDeclaringType().getQualifiedName()
+  c.getDeclaringType().hasFullyQualifiedName(qualifier, name) and
+  qualifier = "Constructors" and
+  name = "Class"
+select c, c.getDeclaringType().getFullyQualifiedNameDebug()

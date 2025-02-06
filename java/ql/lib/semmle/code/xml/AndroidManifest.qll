@@ -23,6 +23,21 @@ class AndroidManifestXmlFile extends XmlFile {
    * Holds if this Android manifest file is located in a build directory.
    */
   predicate isInBuildDirectory() { this.getFile().getRelativePath().matches("%build%") }
+
+  /**
+   * Holds if this file defines at least one activity, service or contest provider,
+   * and so it corresponds to an android application rather than a library.
+   */
+  predicate definesAndroidApplication() {
+    exists(AndroidComponentXmlElement acxe |
+      this.getManifestElement().getApplicationElement().getAComponentElement() = acxe and
+      (
+        acxe instanceof AndroidActivityXmlElement or
+        acxe instanceof AndroidServiceXmlElement or
+        acxe instanceof AndroidProviderXmlElement
+      )
+    )
+  }
 }
 
 /**
@@ -129,6 +144,42 @@ class AndroidApplicationXmlElement extends XmlElement {
  */
 class AndroidActivityXmlElement extends AndroidComponentXmlElement {
   AndroidActivityXmlElement() { this.getName() = "activity" }
+
+  /**
+   * Gets an `<activity-alias>` element aliasing the activity.
+   */
+  AndroidActivityAliasXmlElement getAnAlias() {
+    exists(AndroidActivityAliasXmlElement alias | this = alias.getTarget() | result = alias)
+  }
+}
+
+/**
+ * An `<activity-alias>` element in an Android manifest file.
+ */
+class AndroidActivityAliasXmlElement extends AndroidComponentXmlElement {
+  AndroidActivityAliasXmlElement() { this.getName() = "activity-alias" }
+
+  /**
+   * Get and resolve the name of the target activity from the `android:targetActivity` attribute.
+   */
+  string getResolvedTargetActivityName() {
+    exists(AndroidXmlAttribute attr |
+      attr = this.getAnAttribute() and attr.getName() = "targetActivity"
+    |
+      result = this.getResolvedIdentifier(attr)
+    )
+  }
+
+  /**
+   * Gets the `<activity>` element referenced by the `android:targetActivity` attribute.
+   */
+  AndroidActivityXmlElement getTarget() {
+    exists(AndroidActivityXmlElement activity |
+      activity.getResolvedComponentName() = this.getResolvedTargetActivityName()
+    |
+      result = activity
+    )
+  }
 }
 
 /**
@@ -213,6 +264,13 @@ class AndroidPermissionXmlAttribute extends XmlAttribute {
 }
 
 /**
+ * The attribute `android:name` or `android:targetActivity`.
+ */
+class AndroidIdentifierXmlAttribute extends AndroidXmlAttribute {
+  AndroidIdentifierXmlAttribute() { this.getName() = ["name", "targetActivity"] }
+}
+
+/**
  * The `<path-permission`> element of a `<provider>` in an Android manifest file.
  */
 class AndroidPathPermissionXmlElement extends XmlElement {
@@ -228,7 +286,7 @@ class AndroidPathPermissionXmlElement extends XmlElement {
 class AndroidComponentXmlElement extends XmlElement {
   AndroidComponentXmlElement() {
     this.getParent() instanceof AndroidApplicationXmlElement and
-    this.getName().regexpMatch("(activity|service|receiver|provider)")
+    this.getName().regexpMatch("(activity|activity-alias|service|receiver|provider)")
   }
 
   /**
@@ -255,18 +313,29 @@ class AndroidComponentXmlElement extends XmlElement {
   }
 
   /**
+   * Gets the value of an identifier attribute, and tries to resolve it into a fully qualified identifier.
+   */
+  string getResolvedIdentifier(AndroidIdentifierXmlAttribute identifier) {
+    exists(string name | name = identifier.getValue() |
+      if name.matches(".%")
+      then
+        result =
+          this.getParent()
+                .(XmlElement)
+                .getParent()
+                .(AndroidManifestXmlElement)
+                .getPackageAttributeValue() + name
+      else result = name
+    )
+  }
+
+  /**
    * Gets the resolved value of the `android:name` attribute of this component element.
    */
   string getResolvedComponentName() {
-    if this.getComponentName().matches(".%")
-    then
-      result =
-        this.getParent()
-              .(XmlElement)
-              .getParent()
-              .(AndroidManifestXmlElement)
-              .getPackageAttributeValue() + this.getComponentName()
-    else result = this.getComponentName()
+    exists(AndroidXmlAttribute attr | attr = this.getAnAttribute() and attr.getName() = "name" |
+      result = this.getResolvedIdentifier(attr)
+    )
   }
 
   /**

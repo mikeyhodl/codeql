@@ -10,10 +10,12 @@ import java.util.Stack
 import org.jetbrains.kotlin.ir.IrElement
 
 class LogCounter() {
-    public val diagnosticCounts = mutableMapOf<String, Int>()
+    public val diagnosticInfo = mutableMapOf<String, Pair<Severity, Int>>()
     public val diagnosticLimit: Int
+
     init {
-        diagnosticLimit = System.getenv("CODEQL_EXTRACTOR_KOTLIN_DIAGNOSTIC_LIMIT")?.toIntOrNull() ?: 100
+        diagnosticLimit =
+            System.getenv("CODEQL_EXTRACTOR_KOTLIN_DIAGNOSTIC_LIMIT")?.toIntOrNull() ?: 100
     }
 }
 
@@ -35,6 +37,7 @@ enum class Severity(val sev: Int) {
 
 class LogMessage(private val kind: String, private val message: String) {
     val timestamp: String
+
     init {
         timestamp = "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}"
     }
@@ -45,35 +48,57 @@ class LogMessage(private val kind: String, private val message: String) {
 
     private fun escape(str: String): String {
         return str.replace("\\", "\\\\")
-                  .replace("\"", "\\\"")
-                  .replace("/", "\\/")
-                  .replace("\b", "\\b")
-                  .replace("\u000C", "\\f")
-                  .replace("\n", "\\n")
-                  .replace("\r", "\\r")
-                  .replace("\t", "\\t")
+            .replace("\"", "\\\"")
+            .replace("\u0000", "\\u0000")
+            .replace("\u0001", "\\u0001")
+            .replace("\u0002", "\\u0002")
+            .replace("\u0003", "\\u0003")
+            .replace("\u0004", "\\u0004")
+            .replace("\u0005", "\\u0005")
+            .replace("\u0006", "\\u0006")
+            .replace("\u0007", "\\u0007")
+            .replace("\u0008", "\\b")
+            .replace("\u0009", "\\t")
+            .replace("\u000A", "\\n")
+            .replace("\u000B", "\\u000B")
+            .replace("\u000C", "\\f")
+            .replace("\u000D", "\\r")
+            .replace("\u000E", "\\u000E")
+            .replace("\u000F", "\\u000F")
     }
 
     fun toJsonLine(): String {
-        val kvs = listOf(Pair("origin", "CodeQL Kotlin extractor"),
-                         Pair("timestamp", timestamp),
-                         Pair("kind", kind),
-                         Pair("message", message))
-        return "{ " + kvs.map { p -> "\"${p.first}\": \"${escape(p.second)}\""}.joinToString(", ") + " }\n"
+        val kvs =
+            listOf(
+                Pair("origin", "CodeQL Kotlin extractor"),
+                Pair("timestamp", timestamp),
+                Pair("kind", kind),
+                Pair("message", message)
+            )
+        return "{ " +
+            kvs.map { p -> "\"${p.first}\": \"${escape(p.second)}\"" }.joinToString(", ") +
+            " }\n"
     }
 }
 
-data class ExtractorContext(val kind: String, val element: IrElement, val name: String, val loc: String)
+data class ExtractorContext(
+    val kind: String,
+    val element: IrElement,
+    val name: String,
+    val loc: String
+)
 
 open class LoggerBase(val logCounter: LogCounter) {
     val extractorContextStack = Stack<ExtractorContext>()
 
     private val verbosity: Int
+
     init {
         verbosity = System.getenv("CODEQL_EXTRACTOR_KOTLIN_VERBOSITY")?.toIntOrNull() ?: 3
     }
 
     private val logStream: Writer
+
     init {
         val extractorLogDir = System.getenv("CODEQL_EXTRACTOR_JAVA_LOG_DIR")
         if (extractorLogDir == null || extractorLogDir == "") {
@@ -86,8 +111,8 @@ open class LoggerBase(val logCounter: LogCounter) {
 
     private fun getDiagnosticLocation(): String? {
         val st = Exception().stackTrace
-        for(x in st) {
-            when(x.className) {
+        for (x in st) {
+            when (x.className) {
                 "com.github.codeql.LoggerBase",
                 "com.github.codeql.Logger",
                 "com.github.codeql.FileLogger" -> {}
@@ -107,19 +132,40 @@ open class LoggerBase(val logCounter: LogCounter) {
         file_number_diagnostic_number = 0
     }
 
-    fun diagnostic(tw: TrapWriter, severity: Severity, msg: String, extraInfo: String?, locationString: String? = null, mkLocationId: () -> Label<DbLocation> = { tw.unknownLocation }) {
+    fun diagnostic(
+        dtw: DiagnosticTrapWriter,
+        severity: Severity,
+        msg: String,
+        extraInfo: String?,
+        locationString: String? = null,
+        mkLocationId: () -> Label<DbLocation> = { dtw.unknownLocation }
+    ) {
         val diagnosticLoc = getDiagnosticLocation()
-        val diagnosticLocStr = if(diagnosticLoc == null) "<unknown location>" else diagnosticLoc
+        val diagnosticLocStr = if (diagnosticLoc == null) "<unknown location>" else diagnosticLoc
         val suffix =
-            if(diagnosticLoc == null) {
+            if (diagnosticLoc == null) {
                 "    Missing caller information.\n"
             } else {
-                val count = logCounter.diagnosticCounts.getOrDefault(diagnosticLoc, 0) + 1
-                logCounter.diagnosticCounts[diagnosticLoc] = count
+                val oldInfo =
+                    logCounter.diagnosticInfo.getOrDefault(diagnosticLoc, Pair(severity, 0))
+                if (severity != oldInfo.first) {
+                    // We don't want to get in a loop, so just emit this
+                    // directly without going through the diagnostic
+                    // counting machinery
+                    if (verbosity >= 1) {
+                        val message =
+                            "Severity mismatch ($severity vs ${oldInfo.first}) at $diagnosticLoc"
+                        emitDiagnostic(dtw, Severity.Error, "Inconsistency", message, message)
+                    }
+                }
+                val newCount = oldInfo.second + 1
+                val newInfo = Pair(severity, newCount)
+                logCounter.diagnosticInfo[diagnosticLoc] = newInfo
                 when {
                     logCounter.diagnosticLimit <= 0 -> ""
-                    count == logCounter.diagnosticLimit -> "    Limit reached for diagnostics from $diagnosticLoc.\n"
-                    count > logCounter.diagnosticLimit -> return
+                    newCount == logCounter.diagnosticLimit ->
+                        "    Limit reached for diagnostics from $diagnosticLoc.\n"
+                    newCount > logCounter.diagnosticLimit -> return
                     else -> ""
                 }
             }
@@ -138,61 +184,92 @@ open class LoggerBase(val logCounter: LogCounter) {
         fullMsgBuilder.append(suffix)
 
         val fullMsg = fullMsgBuilder.toString()
+        emitDiagnostic(dtw, severity, diagnosticLocStr, msg, fullMsg, locationString, mkLocationId)
+    }
+
+    private fun emitDiagnostic(
+        dtw: DiagnosticTrapWriter,
+        severity: Severity,
+        diagnosticLocStr: String,
+        msg: String,
+        fullMsg: String,
+        locationString: String? = null,
+        mkLocationId: () -> Label<DbLocation> = { dtw.unknownLocation }
+    ) {
         val locStr = if (locationString == null) "" else "At " + locationString + ": "
         val kind = if (severity <= Severity.WarnHigh) "WARN" else "ERROR"
         val logMessage = LogMessage(kind, "Diagnostic($diagnosticLocStr): $locStr$fullMsg")
         // We don't actually make the location until after the `return` above
         val locationId = mkLocationId()
-        val diagLabel = tw.getFreshIdLabel<DbDiagnostic>()
-        tw.writeDiagnostics(diagLabel, "CodeQL Kotlin extractor", severity.sev, "", msg, "${logMessage.timestamp} $fullMsg", locationId)
-        tw.writeDiagnostic_for(diagLabel, StringLabel("compilation"), file_number, file_number_diagnostic_number++)
+        val diagLabel = dtw.getFreshIdLabel<DbDiagnostic>()
+        dtw.writeDiagnostics(
+            diagLabel,
+            "CodeQL Kotlin extractor",
+            severity.sev,
+            "",
+            msg,
+            "${logMessage.timestamp} $fullMsg",
+            locationId
+        )
+        dtw.writeDiagnostic_for(
+            diagLabel,
+            StringLabel("compilation"),
+            file_number,
+            file_number_diagnostic_number++
+        )
         logStream.write(logMessage.toJsonLine())
     }
 
-    fun trace(tw: TrapWriter, msg: String) {
+    fun trace(dtw: DiagnosticTrapWriter, msg: String) {
         if (verbosity >= 4) {
             val logMessage = LogMessage("TRACE", msg)
-            tw.writeComment(logMessage.toText())
+            dtw.writeComment(logMessage.toText())
             logStream.write(logMessage.toJsonLine())
         }
     }
 
-    fun debug(tw: TrapWriter, msg: String) {
+    fun debug(dtw: DiagnosticTrapWriter, msg: String) {
         if (verbosity >= 4) {
             val logMessage = LogMessage("DEBUG", msg)
-            tw.writeComment(logMessage.toText())
+            dtw.writeComment(logMessage.toText())
             logStream.write(logMessage.toJsonLine())
         }
     }
 
-    fun info(tw: TrapWriter, msg: String) {
+    fun info(dtw: DiagnosticTrapWriter, msg: String) {
         if (verbosity >= 3) {
             val logMessage = LogMessage("INFO", msg)
-            tw.writeComment(logMessage.toText())
+            dtw.writeComment(logMessage.toText())
             logStream.write(logMessage.toJsonLine())
         }
     }
 
-    fun warn(tw: TrapWriter, msg: String, extraInfo: String?) {
-        if (verbosity >= 2) {
-            diagnostic(tw, Severity.Warn, msg, extraInfo)
-        }
+    fun infoVerbosity(dtw: DiagnosticTrapWriter) {
+        info(dtw, "Kotlin extractor verbosity is " + verbosity.toString())
     }
-    fun error(tw: TrapWriter, msg: String, extraInfo: String?) {
-        if (verbosity >= 1) {
-            diagnostic(tw, Severity.Error, msg, extraInfo)
+
+    fun warn(dtw: DiagnosticTrapWriter, msg: String, extraInfo: String?) {
+        if (verbosity >= 2) {
+            diagnostic(dtw, Severity.Warn, msg, extraInfo)
         }
     }
 
-    fun printLimitedDiagnosticCounts(tw: TrapWriter) {
-        for((caller, count) in logCounter.diagnosticCounts) {
-            if(count >= logCounter.diagnosticLimit) {
-                // We don't know if this location relates to an error
-                // or a warning, so we just declare hitting the limit
-                // to be an error regardless.
-                val logMessage = LogMessage("ERROR", "Total of $count diagnostics from $caller.")
-                tw.writeComment(logMessage.toText())
-                logStream.write(logMessage.toJsonLine())
+    fun error(dtw: DiagnosticTrapWriter, msg: String, extraInfo: String?) {
+        if (verbosity >= 1) {
+            diagnostic(dtw, Severity.Error, msg, extraInfo)
+        }
+    }
+
+    fun printLimitedDiagnosticCounts(dtw: DiagnosticTrapWriter) {
+        for ((caller, info) in logCounter.diagnosticInfo) {
+            val severity = info.first
+            val count = info.second
+            if (count >= logCounter.diagnosticLimit) {
+                val message =
+                    "Total of $count diagnostics (reached limit of ${logCounter.diagnosticLimit}) from $caller."
+                if (verbosity >= 1) {
+                    emitDiagnostic(dtw, severity, "Limit", message, message)
+                }
             }
         }
     }
@@ -206,57 +283,82 @@ open class LoggerBase(val logCounter: LogCounter) {
     }
 }
 
-open class Logger(val loggerBase: LoggerBase, open val tw: TrapWriter) {
+open class Logger(val loggerBase: LoggerBase, val dtw: DiagnosticTrapWriter) {
     fun flush() {
-        tw.flush()
+        dtw.flush()
         loggerBase.flush()
     }
 
     fun trace(msg: String) {
-        loggerBase.trace(tw, msg)
+        loggerBase.trace(dtw, msg)
     }
+
     fun trace(msg: String, exn: Throwable) {
         trace(msg + "\n" + exn.stackTraceToString())
     }
+
     fun debug(msg: String) {
-        loggerBase.debug(tw, msg)
+        loggerBase.debug(dtw, msg)
     }
 
     fun info(msg: String) {
-        loggerBase.info(tw, msg)
+        loggerBase.info(dtw, msg)
+    }
+
+    fun infoVerbosity() {
+        loggerBase.infoVerbosity(dtw)
     }
 
     private fun warn(msg: String, extraInfo: String?) {
-        loggerBase.warn(tw, msg, extraInfo)
+        loggerBase.warn(dtw, msg, extraInfo)
     }
+
     fun warn(msg: String, exn: Throwable) {
         warn(msg, exn.stackTraceToString())
     }
+
     fun warn(msg: String) {
         warn(msg, null)
     }
 
     private fun error(msg: String, extraInfo: String?) {
-        loggerBase.error(tw, msg, extraInfo)
+        loggerBase.error(dtw, msg, extraInfo)
     }
+
     fun error(msg: String) {
         error(msg, null)
     }
+
     fun error(msg: String, exn: Throwable) {
         error(msg, exn.stackTraceToString())
     }
 }
 
-class FileLogger(loggerBase: LoggerBase, override val tw: FileTrapWriter): Logger(loggerBase, tw) {
+class FileLogger(loggerBase: LoggerBase, val ftw: FileTrapWriter) :
+    Logger(loggerBase, ftw.getDiagnosticTrapWriter()) {
     fun warnElement(msg: String, element: IrElement, exn: Throwable? = null) {
-        val locationString = tw.getLocationString(element)
-        val mkLocationId = { tw.getLocation(element) }
-        loggerBase.diagnostic(tw, Severity.Warn, msg, exn?.stackTraceToString(), locationString, mkLocationId)
+        val locationString = ftw.getLocationString(element)
+        val mkLocationId = { ftw.getLocation(element) }
+        loggerBase.diagnostic(
+            ftw.getDiagnosticTrapWriter(),
+            Severity.Warn,
+            msg,
+            exn?.stackTraceToString(),
+            locationString,
+            mkLocationId
+        )
     }
 
     fun errorElement(msg: String, element: IrElement, exn: Throwable? = null) {
-        val locationString = tw.getLocationString(element)
-        val mkLocationId = { tw.getLocation(element) }
-        loggerBase.diagnostic(tw, Severity.Error, msg, exn?.stackTraceToString(), locationString, mkLocationId)
+        val locationString = ftw.getLocationString(element)
+        val mkLocationId = { ftw.getLocation(element) }
+        loggerBase.diagnostic(
+            ftw.getDiagnosticTrapWriter(),
+            Severity.Error,
+            msg,
+            exn?.stackTraceToString(),
+            locationString,
+            mkLocationId
+        )
     }
 }

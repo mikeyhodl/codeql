@@ -55,9 +55,7 @@ module ExternalApiUsedWithUntrustedData {
    */
   abstract class Sanitizer extends DataFlow::Node { }
 
-  private class RemoteFlowAsSource extends Source {
-    RemoteFlowAsSource() { this instanceof RemoteFlowSource }
-  }
+  private class RemoteFlowAsSource extends Source instanceof RemoteFlowSource { }
 
   /**
    * A package name whose entire API is considered "safe" for the purpose of this query.
@@ -65,9 +63,6 @@ module ExternalApiUsedWithUntrustedData {
   abstract class SafeExternalApiPackage extends string {
     SafeExternalApiPackage() { exists(API::moduleImport(this)) }
   }
-
-  /** DEPRECATED: Alias for SafeExternalApiPackage */
-  deprecated class SafeExternalAPIPackage = SafeExternalApiPackage;
 
   private class DefaultSafeExternalApiPackage extends SafeExternalApiPackage {
     DefaultSafeExternalApiPackage() {
@@ -84,9 +79,6 @@ module ExternalApiUsedWithUntrustedData {
    * A function that is considered a "safe" external API from a security perspective.
    */
   abstract class SafeExternalApiFunction extends API::Node { }
-
-  /** DEPRECATED: Alias for SafeExternalApiFunction */
-  deprecated class SafeExternalAPIFunction = SafeExternalApiFunction;
 
   /** Holds if data read from a use of `f` may originate from an imported package. */
   private predicate mayComeFromLibrary(API::Node f) {
@@ -260,7 +252,6 @@ module ExternalApiUsedWithUntrustedData {
       |
         TaintTracking::sharedTaintStep(arg, _) or
         DataFlow::SharedFlowStep::step(arg, _) or
-        DataFlow::SharedFlowStep::step(arg, _, _, _) or
         DataFlow::SharedFlowStep::loadStep(arg, _, _) or
         DataFlow::SharedFlowStep::storeStep(arg, _, _) or
         DataFlow::SharedFlowStep::loadStoreStep(arg, _, _)
@@ -373,6 +364,3 @@ module ExternalApiUsedWithUntrustedData {
     }
   }
 }
-
-/** DEPRECATED: Alias for ExternalApiUsedWithUntrustedData */
-deprecated module ExternalAPIUsedWithUntrustedData = ExternalApiUsedWithUntrustedData;

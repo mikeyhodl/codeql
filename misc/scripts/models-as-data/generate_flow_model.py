@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import helpers
 import json
 import os
 import os.path
@@ -8,64 +9,71 @@ import subprocess
 import sys
 import tempfile
 
+def quote_if_needed(row):
+    if row != "true" and row != "false":
+        return "\"" + row + "\""
+    # subtypes column
+    return row[0].upper() + row[1:]
+
+def parseData(data):
+    rows = { }
+
+    for row in data:
+        d = row[0].split(';')
+        namespace = d[0]
+        d = map(quote_if_needed, d)
+        helpers.insert_update(rows, namespace, "      - [" + ', '.join(d) + ']\n')
+
+    return rows
+
 class Generator:
     def __init__ (self, language):
         self.language = language
         self.generateSinks = False
         self.generateSources = False
         self.generateSummaries = False
-        self.generateNegativeSummaries = False
+        self.generateNeutrals = False
+        self.generateMixedSummaries = False
+        self.generateMixedNeutrals = False
         self.generateTypeBasedSummaries = False
         self.dryRun = False
+        self.dirname = "modelgenerator"
 
 
     def printHelp(self):
         print(f"""Usage:
-python3 GenerateFlowModel.py <library-database> <outputQll> [<friendlyFrameworkName>] [--with-sinks] [--with-sources] [--with-summaries] [--with-typebased-summaries] [--dry-run]
+python3 GenerateFlowModel.py <library-database> [DIR] [--with-sinks] [--with-sources] [--with-summaries] [--with-neutrals] [--with-typebased-summaries] [--dry-run]
 
-This generates summary, source and sink models for the code in the database.
-The files will be placed in `{self.language}/ql/lib/semmle/code/{self.language}/frameworks/<outputQll>` where
-outputQll is the name (and path) of the output QLL file. Usually, models are grouped by their
-respective frameworks.
-If negative summaries are produced a file prefixed with `Negative` will be generated and stored in the same folder.
+This generates summary, source, sink and neutral models for the code in the database.
+The files will be placed in `{self.language}/ql/lib/ext/generated/DIR`
 
 Which models are generated is controlled by the flags:
     --with-sinks
     --with-sources
     --with-summaries
-    --with-negative-summaries
-    --with-typebased-summaries (Experimental - only for C#)
-If none of these flags are specified, all models are generated.
+    --with-neutrals
+    --with-mixed-summaries (Experimental). May not be used in conjunction with --with-summaries.
+    --with-mixed-neutrals (Experimental). Should only be used in conjunction with --with-mixed-summaries.
+    --with-typebased-summaries (Experimental)
+If none of these flags are specified, all models are generated except for the type based models.
 
     --dry-run: Only run the queries, but don't write to file.
 
 Example invocations:
-$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db "mylibrary/Framework.qll"
-$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db "mylibrary/Framework.qll" "Friendly Name of Framework"
-$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db "mylibrary/FrameworkSinks.qll" --with-sinks
+$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db
+$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db --with-sinks
+$ python3 GenerateFlowModel.py /tmp/dbs/my_library_db --with-sinks my_directory
+
 
 Requirements: `codeql` should both appear on your path.
     """)
 
 
-    def setenvironment(self, target, database, friendlyName):
+    def setenvironment(self, database, folder):
         self.codeQlRoot = subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode("utf-8").strip()
-        if not target.endswith(".qll"):
-            target += ".qll"
-        filename = os.path.basename(target)
-        dirname = os.path.dirname(target)
-        if friendlyName is not None:
-            self.friendlyname = friendlyName
-        else:
-            self.friendlyname = filename[:-4]
-        self.shortname = filename[:-4]
         self.database = database
         self.generatedFrameworks = os.path.join(
-            self.codeQlRoot, f"{self.language}/ql/lib/semmle/code/{self.language}/frameworks/")
-        self.frameworkTarget = os.path.join(self.generatedFrameworks, dirname, filename)
-        self.negativeFrameworkTarget = os.path.join(self.generatedFrameworks, dirname, "Negative" + filename)
-        self.typeBasedFrameworkTarget = os.path.join(self.generatedFrameworks, dirname, "TypeBased" + filename)
-
+            self.codeQlRoot, f"{self.language}/ql/lib/ext/generated/{folder}")
         self.workDir = tempfile.mkdtemp()
         os.makedirs(self.generatedFrameworks, exist_ok=True)
 
@@ -74,6 +82,10 @@ Requirements: `codeql` should both appear on your path.
     def make(language):
         generator = Generator(language)
         if any(s == "--help" for s in sys.argv):
+            generator.printHelp()
+            sys.exit(0)
+
+        if "--with-summaries" in sys.argv and "--with-mixed-summaries" in sys.argv:
             generator.printHelp()
             sys.exit(0)
 
@@ -89,9 +101,17 @@ Requirements: `codeql` should both appear on your path.
             sys.argv.remove("--with-summaries")
             generator.generateSummaries = True
 
-        if "--with-negative-summaries" in sys.argv:
-            sys.argv.remove("--with-negative-summaries")
-            generator.generateNegativeSummaries = True
+        if "--with-neutrals" in sys.argv:
+            sys.argv.remove("--with-neutrals")
+            generator.generateNeutrals = True
+
+        if "--with-mixed-summaries" in sys.argv:
+            sys.argv.remove("--with-mixed-summaries")
+            generator.generateMixedSummaries = True
+
+        if "--with-mixed-neutrals" in sys.argv:
+            sys.argv.remove("--with-mixed-neutrals")
+            generator.generateMixedNeutrals = True
 
         if "--with-typebased-summaries" in sys.argv:
             sys.argv.remove("--with-typebased-summaries")
@@ -101,179 +121,117 @@ Requirements: `codeql` should both appear on your path.
             sys.argv.remove("--dry-run")
             generator.dryRun = True
 
-        if not generator.generateSinks and not generator.generateSources and not generator.generateSummaries and not generator.generateNegativeSummaries and not generator.generateTypeBasedSummaries:
-            generator.generateSinks = generator.generateSources = generator.generateSummaries = generator.generateNegativeSummaries = True
+        if (not generator.generateSinks and
+           not generator.generateSources and
+           not generator.generateSummaries and
+           not generator.generateNeutrals and
+           not generator.generateTypeBasedSummaries and
+           not generator.generateMixedSummaries and
+           not generator.generateMixedNeutrals):
+            generator.generateSinks = generator.generateSources = generator.generateSummaries = generator.generateNeutrals = True
 
-        if len(sys.argv) < 3 or len(sys.argv) > 4:
+        n = len(sys.argv)
+        if n < 2:
             generator.printHelp()
             sys.exit(1)
+        elif n == 2:
+            generator.setenvironment(sys.argv[1], "")
+        else:
+            generator.setenvironment(sys.argv[1], sys.argv[2])
 
-        friendlyName = None
-        if len(sys.argv) == 4:
-            friendlyName = sys.argv[3]
-
-        generator.setenvironment(sys.argv[2], sys.argv[1], friendlyName)
         return generator
 
 
-    def runQuery(self, infoMessage, query):
-        print("########## Querying " + infoMessage + "...")
-        queryFile = os.path.join(self.codeQlRoot, f"{self.language}/ql/src/utils/model-generator", query)
+    def runQuery(self, query):
+        print("########## Querying " + query + "...")
+        queryFile = os.path.join(self.codeQlRoot, f"{self.language}/ql/src/utils/{self.dirname}", query)
         resultBqrs = os.path.join(self.workDir, "out.bqrs")
-        cmd = ['codeql', 'query', 'run', queryFile, '--database',
-               self.database, '--output', resultBqrs, '--threads', '8']
 
-        ret = subprocess.call(cmd)
-        if ret != 0:
-            print("Failed to generate " + infoMessage +
-                  ". Failed command was: " + shlex.join(cmd))
-            sys.exit(1)
-        return self.readRows(resultBqrs)
+        helpers.run_cmd(['codeql', 'query', 'run', queryFile, '--database',
+               self.database, '--output', resultBqrs, '--threads', '8', '--ram', '32768'], "Failed to generate " + query)
+
+        return helpers.readData(self.workDir, resultBqrs)
 
 
-    def readRows(self, bqrsFile):
-        generatedJson = os.path.join(self.workDir, "out.json")
-        cmd = ['codeql', 'bqrs', 'decode', bqrsFile,
-               '--format=json', '--output', generatedJson]
-        ret = subprocess.call(cmd)
-        if ret != 0:
-            print("Failed to decode BQRS. Failed command was: " + shlex.join(cmd))
-            sys.exit(1)
+    def asAddsTo(self, rows, predicate):
+        extensions = { }
+        for key in rows:
+            extensions[key] = helpers.addsToTemplate.format(f"codeql/{self.language}-all", predicate, rows[key])
+        return extensions
 
-        with open(generatedJson) as f:
-            results = json.load(f)
-
-        try:
-            results['#select']['tuples']
-        except KeyError:
-            print('Unexpected JSON output - no tuples found')
-            exit(1)
-
-        rows = ""
-        for (row) in results['#select']['tuples']:
-            rows += "            \"" + row[0] + "\",\n"
-
-        return rows[:-2]
-
-
-    def asCsvModel(self, superclass, kind, rows):
-        classTemplate = """
-private class {0}{1}Csv extends {2} {{
-    override predicate row(string row) {{
-        row =
-            [
-{3}
-            ]
-    }}
-}}
-        """
-        if rows.strip() == "":
-            return ""
-        return classTemplate.format(self.shortname[0].upper() + self.shortname[1:], kind.capitalize(), superclass, rows)
-
+    def getAddsTo(self, query, predicate):
+        data = self.runQuery(query)
+        rows = parseData(data)
+        return self.asAddsTo(rows, predicate)
 
     def makeContent(self):
         if self.generateSummaries:
-            summaryRows = self.runQuery("summary models", "CaptureSummaryModels.ql")
-            summaryCsv = self.asCsvModel("SummaryModelCsv", "summary", summaryRows)
+            summaryAddsTo = self.getAddsTo("CaptureSummaryModels.ql", helpers.summaryModelPredicate)
         else:
-            summaryCsv = ""
+            summaryAddsTo = { }
 
         if self.generateSinks:
-            sinkRows = self.runQuery("sink models", "CaptureSinkModels.ql")
-            sinkCsv = self.asCsvModel("SinkModelCsv", "sinks", sinkRows)
+            sinkAddsTo = self.getAddsTo("CaptureSinkModels.ql", helpers.sinkModelPredicate)
         else:
-            sinkCsv = ""
+            sinkAddsTo = { }
 
         if self.generateSources:
-            sourceRows = self.runQuery("source models", "CaptureSourceModels.ql")
-            sourceCsv = self.asCsvModel("SourceModelCsv", "sources", sourceRows)
+            sourceAddsTo = self.getAddsTo("CaptureSourceModels.ql", helpers.sourceModelPredicate)
         else:
-            sourceCsv = ""
+            sourceAddsTo = {}
 
-        return f"""
-/** 
- * THIS FILE IS AN AUTO-GENERATED MODELS AS DATA FILE. DO NOT EDIT.
- * Definitions of taint steps in the {self.friendlyname} framework.
- */
-
-import {self.language}
-private import semmle.code.{self.language}.dataflow.ExternalFlow
-
-{sinkCsv}
-{sourceCsv}
-{summaryCsv}
-
-        """
-
-    def makeNegativeContent(self):
-        if self.generateNegativeSummaries:
-            negativeSummaryRows = self.runQuery("negative summary models", "CaptureNegativeSummaryModels.ql")
-            negativeSummaryCsv = self.asCsvModel("NegativeSummaryModelCsv", "NegativeSummary", negativeSummaryRows)
+        if self.generateNeutrals:
+            neutralAddsTo = self.getAddsTo("CaptureNeutralModels.ql", helpers.neutralModelPredicate)
         else:
-            negativeSummaryCsv = ""
+            neutralAddsTo = { }
 
-        return f"""
-/**
- * THIS FILE IS AN AUTO-GENERATED MODELS AS DATA FILE. DO NOT EDIT.
- * Definitions of negative summaries in the {self.friendlyname} framework.
- */
+        if self.generateMixedSummaries:
+            mixedSummaryAddsTo = self.getAddsTo("CaptureMixedSummaryModels.ql", helpers.summaryModelPredicate)
+        else:
+            mixedSummaryAddsTo = { }
 
-import {self.language}
-private import semmle.code.{self.language}.dataflow.ExternalFlow
+        if self.generateMixedNeutrals:
+            mixedNeutralAddsTo = self.getAddsTo("CaptureMixedNeutralModels.ql", helpers.neutralModelPredicate)
+        else:
+            mixedNeutralAddsTo = { }
 
-{negativeSummaryCsv}
-
-        """
+        return helpers.merge(summaryAddsTo, mixedSummaryAddsTo, sinkAddsTo, sourceAddsTo, neutralAddsTo, mixedNeutralAddsTo)
 
     def makeTypeBasedContent(self):
         if self.generateTypeBasedSummaries:
-            typeBasedSummaryRows = self.runQuery("type based summary models", "CaptureTypeBasedSummaryModels.ql")
-            typeBasedSummaryCsv = self.asCsvModel("SummaryModelCsv", "TypeBasedSummary", typeBasedSummaryRows)
+            typeBasedSummaryAddsTo = self.getAddsTo("CaptureTypeBasedSummaryModels.ql", helpers.summaryModelPredicate)
         else:
-            typeBasedSummaryCsv = ""
+            typeBasedSummaryAddsTo = { }
 
-        return f"""
-/**
- * THIS FILE IS AN AUTO-GENERATED MODELS AS DATA FILE. DO NOT EDIT.
- * Definitions of type based summaries in the {self.friendlyname} framework.
- */
+        return typeBasedSummaryAddsTo
 
-import {self.language}
-private import semmle.code.{self.language}.dataflow.ExternalFlow
-
-{typeBasedSummaryCsv}
-
-        """
-
-    def save(self, content, target):
-        with open(target, "w") as targetQll:
-            targetQll.write(content)
-
-        cmd = ['codeql', 'query', 'format', '--in-place', target]
-        ret = subprocess.call(cmd)
-        if ret != 0:
-            print("Failed to format query. Failed command was: " + shlex.join(cmd))
-            sys.exit(1)
-
-        print("")
-        print("CSV model written to " + target)
+    def save(self, extensions, extension):
+        # Create a file for each namespace and save models.
+        extensionTemplate = """# THIS FILE IS AN AUTO-GENERATED MODELS AS DATA FILE. DO NOT EDIT.
+extensions:
+{0}"""
+        for entry in extensions:
+            target = os.path.join(self.generatedFrameworks, entry + extension)
+            with open(target, "w") as f:
+                f.write(extensionTemplate.format(extensions[entry]))
+            print("Models as data extensions written to " + target)
 
 
     def run(self):
         content = self.makeContent()
-        negativeContent = self.makeNegativeContent()
         typeBasedContent = self.makeTypeBasedContent()
 
         if self.dryRun:
-            print("CSV Models generated, but not written to file.")
+            print("Models as data extensions generated, but not written to file.")
             sys.exit(0)
-        
-        if self.generateSinks or self.generateSinks or self.generateSummaries:
-            self.save(content, self.frameworkTarget)
 
-        if self.generateNegativeSummaries:
-            self.save(negativeContent, self.negativeFrameworkTarget)
+        if (self.generateSinks or
+           self.generateSources or
+           self.generateSummaries or
+           self.generateNeutrals or
+           self.generateMixedSummaries or
+           self.generatedMixedNeutrals):
+            self.save(content, ".model.yml")
 
         if self.generateTypeBasedSummaries:
-            self.save(typeBasedContent, self.typeBasedFrameworkTarget)
+            self.save(typeBasedContent, ".typebased.model.yml")

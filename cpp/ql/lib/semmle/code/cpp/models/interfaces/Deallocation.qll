@@ -12,16 +12,6 @@ import semmle.code.cpp.Function
 import semmle.code.cpp.models.Models
 
 /**
- * A deallocation function such as `free`.
- */
-abstract class DeallocationFunction extends Function {
-  /**
-   * Gets the index of the argument that is freed by this function.
-   */
-  int getFreedArg() { none() }
-}
-
-/**
  * An deallocation expression such as call to `free` or a `delete` expression.
  */
 abstract class DeallocationExpr extends Expr {
@@ -32,13 +22,33 @@ abstract class DeallocationExpr extends Expr {
 }
 
 /**
+ * A deallocation function such as `free`.
+ *
+ * Note: `DeallocationExpr` includes calls to deallocation functions, so prefer
+ * to use that class unless you specifically need to reason about functions.
+ */
+abstract class DeallocationFunction extends Function {
+  /**
+   * Gets the index of the argument that is freed by this function.
+   */
+  int getFreedArg() { none() }
+}
+
+/**
+ * Holds if an external deallocation model exists for the given parameters.
+ */
+extensible predicate deallocationFunctionModel(
+  string namespace, string type, boolean subtypes, string name, string freedArg
+);
+
+/**
  * An `operator delete` or `operator delete[]` function that may be associated
  * with `delete` or `delete[]` expressions.  Note that `delete` and `delete[]`
  * are not function calls, but these functions may also be called directly.
  */
 class OperatorDeleteDeallocationFunction extends DeallocationFunction {
   OperatorDeleteDeallocationFunction() {
-    hasGlobalName([
+    this.hasGlobalName([
         "operator delete", // operator delete(pointer, ...)
         "operator delete[]" // operator delete[](pointer, ...)
       ])

@@ -4,21 +4,9 @@ import java
 private import semmle.code.java.dataflow.ExternalFlow
 private import semmle.code.java.dataflow.FlowSources
 
-private class AndroidWidgetSourceModels extends SourceModelCsv {
-  override predicate row(string row) {
-    row = "android.widget;EditText;true;getText;;;ReturnValue;android-widget;manual"
-  }
-}
-
-private class DefaultAndroidWidgetSources extends RemoteFlowSource {
-  DefaultAndroidWidgetSources() { sourceNode(this, "android-widget") }
-
-  override string getSourceType() { result = "Android widget source" }
-}
-
 private class EditableToStringStep extends AdditionalTaintStep {
   override predicate step(DataFlow::Node n1, DataFlow::Node n2) {
-    exists(MethodAccess ma |
+    exists(MethodCall ma |
       ma.getMethod().hasName("toString") and
       ma.getReceiverType().getASourceSupertype*().hasQualifiedName("android.text", "Editable") and
       n1.asExpr() = ma.getQualifier() and
@@ -33,11 +21,5 @@ private class EditableToStringStep extends AdditionalTaintStep {
       n1.asExpr() = ma.getArgument(0) and
       n2.asExpr() = ma
     )
-  }
-}
-
-private class AndroidWidgetSummaryModels extends SummaryModelCsv {
-  override predicate row(string row) {
-    row = "android.widget;EditText;true;getText;;;Argument[-1];ReturnValue;taint;manual"
   }
 }

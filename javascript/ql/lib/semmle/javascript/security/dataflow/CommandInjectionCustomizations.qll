@@ -25,12 +25,16 @@ module CommandInjection {
    */
   abstract class Sanitizer extends DataFlow::Node { }
 
-  /** A source of remote user input, considered as a flow source for command injection. */
-  class RemoteFlowSourceAsSource extends Source {
-    RemoteFlowSourceAsSource() {
-      this instanceof RemoteFlowSource and
-      not this instanceof ClientSideRemoteFlowSource
-    }
+  /**
+   * DEPRECATED: Use `ActiveThreatModelSource` from Concepts instead!
+   */
+  deprecated class RemoteFlowSourceAsSource = ActiveThreatModelSourceAsSource;
+
+  /**
+   * An active threat-model source, considered as a flow source.
+   */
+  private class ActiveThreatModelSourceAsSource extends Source instanceof ActiveThreatModelSource {
+    ActiveThreatModelSourceAsSource() { not this.isClientSideSource() }
 
     override string getSourceType() { result = "a user-provided value" }
   }
@@ -49,5 +53,9 @@ module CommandInjection {
    */
   class SystemCommandExecutionSink extends Sink, DataFlow::ValueNode {
     SystemCommandExecutionSink() { this = any(SystemCommandExecution sys).getACommandArgument() }
+  }
+
+  private class SinkFromModel extends Sink {
+    SinkFromModel() { this = ModelOutput::getASinkNode("command-injection").asSink() }
   }
 }

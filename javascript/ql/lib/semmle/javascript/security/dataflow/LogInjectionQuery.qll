@@ -22,7 +22,25 @@ abstract class Sanitizer extends DataFlow::Node { }
 /**
  * A taint-tracking configuration for untrusted user input used in log entries.
  */
-class LogInjectionConfiguration extends TaintTracking::Configuration {
+module LogInjectionConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node source) { source instanceof Source }
+
+  predicate isSink(DataFlow::Node sink) { sink instanceof Sink }
+
+  predicate isBarrier(DataFlow::Node node) { node instanceof Sanitizer }
+
+  predicate observeDiffInformedIncrementalMode() { any() }
+}
+
+/**
+ * Taint-tracking for untrusted user input used in log entries.
+ */
+module LogInjectionFlow = TaintTracking::Global<LogInjectionConfig>;
+
+/**
+ * DEPRECATED. Use the `LogInjectionFlow` module instead.
+ */
+deprecated class LogInjectionConfiguration extends TaintTracking::Configuration {
   LogInjectionConfiguration() { this = "LogInjection" }
 
   override predicate isSource(DataFlow::Node source) { source instanceof Source }
@@ -35,10 +53,8 @@ class LogInjectionConfiguration extends TaintTracking::Configuration {
 /**
  * A source of remote user controlled input.
  */
-class RemoteSource extends Source {
-  RemoteSource() {
-    this instanceof RemoteFlowSource and not this instanceof ClientSideRemoteFlowSource
-  }
+class RemoteSource extends Source instanceof RemoteFlowSource {
+  RemoteSource() { not this.isClientSideSource() }
 }
 
 /**
@@ -60,13 +76,15 @@ class StringReplaceSanitizer extends Sanitizer {
 /**
  * A call to an HTML sanitizer is considered to sanitize the user input.
  */
-class HtmlSanitizer extends Sanitizer {
-  HtmlSanitizer() { this instanceof HtmlSanitizerCall }
-}
+class HtmlSanitizer extends Sanitizer instanceof HtmlSanitizerCall { }
 
 /**
  * A call to `JSON.stringify` or similar, seen as sanitizing log output.
  */
 class JsonStringifySanitizer extends Sanitizer {
   JsonStringifySanitizer() { this = any(JsonStringifyCall c).getOutput() }
+}
+
+private class SinkFromModel extends Sink {
+  SinkFromModel() { this = ModelOutput::getASinkNode("log-injection").asSink() }
 }

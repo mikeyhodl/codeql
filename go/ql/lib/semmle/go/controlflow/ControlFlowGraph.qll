@@ -44,10 +44,10 @@ module ControlFlow {
     Node getAPredecessor() { this = result.getASuccessor() }
 
     /** Holds if this is a node with more than one successor. */
-    predicate isBranch() { strictcount(getASuccessor()) > 1 }
+    predicate isBranch() { strictcount(this.getASuccessor()) > 1 }
 
     /** Holds if this is a node with more than one predecessor. */
-    predicate isJoin() { strictcount(getAPredecessor()) > 1 }
+    predicate isJoin() { strictcount(this.getAPredecessor()) > 1 }
 
     /** Holds if this is the first control-flow node in `subtree`. */
     predicate isFirstNodeOf(AstNode subtree) { CFG::firstNode(subtree, this) }
@@ -77,7 +77,7 @@ module ControlFlow {
     Root getRoot() { none() }
 
     /** Gets the file to which this node belongs. */
-    File getFile() { hasLocationInfo(result.getAbsolutePath(), _, _, _, _) }
+    File getFile() { this.hasLocationInfo(result.getAbsolutePath(), _, _, _, _) }
 
     /**
      * Gets a textual representation of this control flow node.
@@ -106,24 +106,20 @@ module ControlFlow {
    * A control-flow node that initializes or updates the value of a constant, a variable,
    * a field, or an (array, slice, or map) element.
    */
-  class WriteNode extends Node {
-    IR::WriteInstruction self;
-
-    WriteNode() { this = self }
-
+  class WriteNode extends Node instanceof IR::WriteInstruction {
     /** Gets the left-hand side of this write. */
-    IR::WriteTarget getLhs() { result = self.getLhs() }
+    IR::WriteTarget getLhs() { result = super.getLhs() }
 
     /** Gets the right-hand side of this write. */
-    DataFlow::Node getRhs() { self.getRhs() = result.asInstruction() }
+    DataFlow::Node getRhs() { super.getRhs() = result.asInstruction() }
 
     /** Holds if this node sets variable or constant `v` to `rhs`. */
-    predicate writes(ValueEntity v, DataFlow::Node rhs) { self.writes(v, rhs.asInstruction()) }
+    predicate writes(ValueEntity v, DataFlow::Node rhs) { super.writes(v, rhs.asInstruction()) }
 
     /** Holds if this node defines SSA variable `v` to be `rhs`. */
     predicate definesSsaVariable(SsaVariable v, DataFlow::Node rhs) {
-      self.getLhs().asSsaVariable() = v and
-      self.getRhs() = rhs.asInstruction()
+      super.getLhs().asSsaVariable() = v and
+      super.getRhs() = rhs.asInstruction()
     }
 
     /**
@@ -136,13 +132,13 @@ module ControlFlow {
      * node corresponding to `newWidth`.
      */
     predicate writesField(DataFlow::Node base, Field f, DataFlow::Node rhs) {
-      exists(IR::FieldTarget trg | trg = self.getLhs() |
+      exists(IR::FieldTarget trg | trg = super.getLhs() |
         (
           trg.getBase() = base.asInstruction() or
           trg.getBase() = MkImplicitDeref(base.asExpr())
         ) and
         trg.getField() = f and
-        self.getRhs() = rhs.asInstruction()
+        super.getRhs() = rhs.asInstruction()
       )
     }
 
@@ -156,13 +152,13 @@ module ControlFlow {
      * is the data-flow node corresponding to `base`.
      */
     predicate writesElement(DataFlow::Node base, DataFlow::Node index, DataFlow::Node rhs) {
-      exists(IR::ElementTarget trg | trg = self.getLhs() |
+      exists(IR::ElementTarget trg | trg = super.getLhs() |
         (
           trg.getBase() = base.asInstruction() or
           trg.getBase() = MkImplicitDeref(base.asExpr())
         ) and
         trg.getIndex() = index.asInstruction() and
-        self.getRhs() = rhs.asInstruction()
+        super.getRhs() = rhs.asInstruction()
       )
     }
 
@@ -170,7 +166,7 @@ module ControlFlow {
      * Holds if this node sets any field or element of `base` to `rhs`.
      */
     predicate writesComponent(DataFlow::Node base, DataFlow::Node rhs) {
-      writesElement(base, _, rhs) or writesField(base, _, rhs)
+      this.writesElement(base, _, rhs) or this.writesField(base, _, rhs)
     }
   }
 
@@ -187,37 +183,37 @@ module ControlFlow {
     private predicate ensuresAux(Expr expr, boolean b) {
       expr = cond and b = outcome
       or
-      expr = any(ParenExpr par | ensuresAux(par, b)).getExpr()
+      expr = any(ParenExpr par | this.ensuresAux(par, b)).getExpr()
       or
-      expr = any(NotExpr ne | ensuresAux(ne, b.booleanNot())).getOperand()
+      expr = any(NotExpr ne | this.ensuresAux(ne, b.booleanNot())).getOperand()
       or
-      expr = any(LandExpr land | ensuresAux(land, true)).getAnOperand() and
+      expr = any(LandExpr land | this.ensuresAux(land, true)).getAnOperand() and
       b = true
       or
-      expr = any(LorExpr lor | ensuresAux(lor, false)).getAnOperand() and
+      expr = any(LorExpr lor | this.ensuresAux(lor, false)).getAnOperand() and
       b = false
     }
 
     /** Holds if this guard ensures that the result of `nd` is `b`. */
     predicate ensures(DataFlow::Node nd, boolean b) {
-      ensuresAux(any(Expr e | nd = DataFlow::exprNode(e)), b)
+      this.ensuresAux(any(Expr e | nd = DataFlow::exprNode(e)), b)
     }
 
     /** Holds if this guard ensures that `lesser <= greater + bias` holds. */
     predicate ensuresLeq(DataFlow::Node lesser, DataFlow::Node greater, int bias) {
       exists(DataFlow::RelationalComparisonNode rel, boolean b |
-        ensures(rel, b) and
+        this.ensures(rel, b) and
         rel.leq(b, lesser, greater, bias)
       )
       or
-      ensuresEq(lesser, greater) and
+      this.ensuresEq(lesser, greater) and
       bias = 0
     }
 
     /** Holds if this guard ensures that `i = j` holds. */
     predicate ensuresEq(DataFlow::Node i, DataFlow::Node j) {
       exists(DataFlow::EqualityTestNode eq, boolean b |
-        ensures(eq, b) and
+        this.ensures(eq, b) and
         eq.eq(b, i, j)
       )
     }
@@ -225,7 +221,7 @@ module ControlFlow {
     /** Holds if this guard ensures that `i != j` holds. */
     predicate ensuresNeq(DataFlow::Node i, DataFlow::Node j) {
       exists(DataFlow::EqualityTestNode eq, boolean b |
-        ensures(eq, b.booleanNot()) and
+        this.ensures(eq, b.booleanNot()) and
         eq.eq(b, i, j)
       )
     }
@@ -236,7 +232,7 @@ module ControlFlow {
      */
     predicate dominates(ReachableBasicBlock bb) {
       this = bb.getANode() or
-      dominates(bb.getImmediateDominator())
+      this.dominates(bb.getImmediateDominator())
     }
 
     /**

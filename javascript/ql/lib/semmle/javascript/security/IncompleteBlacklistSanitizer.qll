@@ -38,9 +38,8 @@ string describeCharacters(string rep) {
  * A local sequence of calls to `String.prototype.replace`,
  * represented by the last call.
  */
-class StringReplaceCallSequence extends DataFlow::CallNode {
+class StringReplaceCallSequence extends DataFlow::CallNode instanceof StringReplaceCall {
   StringReplaceCallSequence() {
-    this instanceof StringReplaceCall and
     not exists(getAStringReplaceMethodCall(this)) // terminal
   }
 
@@ -51,14 +50,14 @@ class StringReplaceCallSequence extends DataFlow::CallNode {
 
   /** Gets a string that is the replacement of this call. */
   string getAReplacementString() {
-    getAMember().replaces(_, result)
+    this.getAMember().replaces(_, result)
     or
     // StringReplaceCall::replaces/2 can't always find the `old` string, so this is added as a fallback.
-    getAMember().getRawReplacement().getStringValue() = result
+    this.getAMember().getRawReplacement().getStringValue() = result
   }
 
   /** Gets a string that is being replaced by this call. */
-  string getAReplacedString() { getAMember().getAReplacedString() = result }
+  string getAReplacedString() { this.getAMember().getAReplacedString() = result }
 }
 
 /**
@@ -75,7 +74,7 @@ private StringReplaceCall getAStringReplaceMethodCall(StringReplaceCall n) {
 module HtmlSanitization {
   private predicate fixedGlobalReplacement(StringReplaceCallSequence chain) {
     forall(StringReplaceCall member | member = chain.getAMember() |
-      member.isGlobal() and member.getArgument(0) instanceof DataFlow::RegExpLiteralNode
+      member.maybeGlobal() and member.getArgument(0) instanceof DataFlow::RegExpCreationNode
     )
   }
 
@@ -121,7 +120,8 @@ module HtmlSanitization {
   /**
    * An incomplete sanitizer for HTML-relevant characters.
    */
-  class IncompleteSanitizer extends IncompleteBlacklistSanitizer instanceof StringReplaceCallSequence {
+  class IncompleteSanitizer extends IncompleteBlacklistSanitizer instanceof StringReplaceCallSequence
+  {
     string unsanitized;
 
     IncompleteSanitizer() {

@@ -12,6 +12,7 @@ private import semmle.python.ApiGraphs
 private import semmle.python.frameworks.Stdlib
 private import semmle.python.Concepts
 private import semmle.python.frameworks.internal.InstanceTaintStepsHelper
+private import semmle.python.frameworks.data.ModelsAsData
 
 /**
  * Provides models for the `Werkzeug` PyPI package.
@@ -83,7 +84,8 @@ module Werkzeug {
     // possible to do storage.read() instead of the long form storage.stream.read(). So
     // that's why InstanceSource also extends `Stdlib::FileLikeObject::InstanceSource`
     abstract class InstanceSource extends Stdlib::FileLikeObject::InstanceSource,
-      DataFlow::LocalSourceNode { }
+      DataFlow::LocalSourceNode
+    { }
 
     /** Gets a reference to an instance of `werkzeug.datastructures.FileStorage`. */
     private DataFlow::TypeTrackingNode instance(DataFlow::TypeTracker t) {
@@ -143,6 +145,18 @@ module Werkzeug {
    * See https://werkzeug.palletsprojects.com/en/1.0.x/datastructures/#werkzeug.datastructures.Headers.
    */
   module Headers {
+    /** Gets a reference to the `werkzeug.datastructures.Headers` class. */
+    API::Node classRef() {
+      result = API::moduleImport("werkzeug").getMember("datastructures").getMember("Headers")
+      or
+      result = ModelOutput::getATypeNode("werkzeug.datastructures.Headers~Subclass").getASubclass*()
+    }
+
+    /** A direct instantiation of `werkzeug.datastructures.Headers`. */
+    private class ClassInstantiation extends InstanceSource, DataFlow::CallCfgNode {
+      ClassInstantiation() { this = classRef().getACall() }
+    }
+
     /**
      * A source of instances of `werkzeug.datastructures.Headers`, extend this class to model new instances.
      *
@@ -180,6 +194,61 @@ module Werkzeug {
       }
 
       override string getAsyncMethodName() { none() }
+    }
+
+    /** A call to a method that writes to a header, assumed to be a response header. */
+    private class HeaderWriteCall extends Http::Server::ResponseHeaderWrite::Range,
+      DataFlow::MethodCallNode
+    {
+      HeaderWriteCall() {
+        this.calls(instance(), ["add", "add_header", "set", "setdefault", "__setitem__"])
+      }
+
+      override DataFlow::Node getNameArg() { result = this.getArg(0) }
+
+      override DataFlow::Node getValueArg() { result = this.getArg(1) }
+
+      override predicate nameAllowsNewline() { any() }
+
+      override predicate valueAllowsNewline() { none() }
+    }
+
+    /** A dict-like write to a header, assumed to be a response header. */
+    private class HeaderWriteSubscript extends Http::Server::ResponseHeaderWrite::Range,
+      DataFlow::Node
+    {
+      DataFlow::Node name;
+      DataFlow::Node value;
+
+      HeaderWriteSubscript() {
+        exists(SubscriptNode subscript |
+          this.asCfgNode() = subscript and
+          value.asCfgNode() = subscript.(DefinitionNode).getValue() and
+          name.asCfgNode() = subscript.getIndex() and
+          subscript.getObject() = instance().asCfgNode()
+        )
+      }
+
+      override DataFlow::Node getNameArg() { result = name }
+
+      override DataFlow::Node getValueArg() { result = value }
+
+      override predicate nameAllowsNewline() { any() }
+
+      override predicate valueAllowsNewline() { none() }
+    }
+
+    /** A call to `Headers.extend`, assumed to be a response header. */
+    private class HeaderExtendCall extends Http::Server::ResponseHeaderBulkWrite::Range,
+      DataFlow::MethodCallNode
+    {
+      HeaderExtendCall() { this.calls(instance(), "extend") }
+
+      override DataFlow::Node getBulkArg() { result = this.getArg(0) }
+
+      override predicate nameAllowsNewline() { any() }
+
+      override predicate valueAllowsNewline() { none() }
     }
   }
 
@@ -229,121 +298,6 @@ module Werkzeug {
       override string getMethodName() { none() }
 
       override string getAsyncMethodName() { none() }
-    }
-  }
-
-  import WerkzeugOld
-}
-
-/**
- * Old version that contains the deprecated modules.
- */
-private module WerkzeugOld {
-  /**
-   * DEPRECATED: Use the modeling available directly in the `Werkzeug` module instead.
-   *
-   * Provides models for the `werkzeug` module.
-   */
-  deprecated module werkzeug {
-    /**
-     * DEPRECATED: Use the modeling available directly in the `Werkzeug` module instead.
-     *
-     * Provides models for the `werkzeug.datastructures` module.
-     */
-    deprecated module datastructures {
-      /**
-       * DEPRECATED: Use `Werkzeug::MultiDict` instead.
-       *
-       * Provides models for the `werkzeug.datastructures.MultiDict` class
-       *
-       * See https://werkzeug.palletsprojects.com/en/1.0.x/datastructures/#werkzeug.datastructures.MultiDict.
-       */
-      deprecated module MultiDict {
-        /**
-         * DEPRECATED. Use `Werkzeug::MultiDict::InstanceSource` instead.
-         *
-         * A source of instances of `werkzeug.datastructures.MultiDict`, extend this class to model new instances.
-         *
-         * This can include instantiations of the class, return values from function
-         * calls, or a special parameter that will be set when functions are called by an external
-         * library.
-         *
-         * Use the predicate `MultiDict::instance()` to get references to instances of `werkzeug.datastructures.MultiDict`.
-         */
-        abstract deprecated class InstanceSourceApiNode extends API::Node { }
-
-        /**
-         * DEPRECATED
-         *
-         * Gets a reference to the `getlist` method on an instance of `werkzeug.datastructures.MultiDict`.
-         *
-         * See https://werkzeug.palletsprojects.com/en/1.0.x/datastructures/#werkzeug.datastructures.Headers.getlist
-         */
-        deprecated DataFlow::Node getlist() {
-          result = any(InstanceSourceApiNode a).getMember("getlist").getAValueReachableFromSource()
-        }
-
-        private class MultiDictAdditionalTaintStep extends TaintTracking::AdditionalTaintStep {
-          override predicate step(DataFlow::Node nodeFrom, DataFlow::Node nodeTo) {
-            // obj -> obj.getlist
-            exists(DataFlow::AttrRead read |
-              read.getObject() = nodeFrom and
-              nodeTo = read and
-              nodeTo = getlist()
-            )
-            or
-            // getlist -> getlist()
-            nodeFrom = getlist() and
-            nodeTo.(DataFlow::CallCfgNode).getFunction() = nodeFrom
-          }
-        }
-      }
-
-      /**
-       * DEPRECATED: Use `Werkzeug::FileStorage` instead.
-       *
-       * Provides models for the `werkzeug.datastructures.FileStorage` class
-       *
-       * See https://werkzeug.palletsprojects.com/en/1.0.x/datastructures/#werkzeug.datastructures.FileStorage.
-       */
-      deprecated module FileStorage {
-        /**
-         * DEPRECATED. Use `Werkzeug::FileStorage::InstanceSource` instead.
-         *
-         * A source of instances of `werkzeug.datastructures.FileStorage`, extend this class to model new instances.
-         *
-         * This can include instantiations of the class, return values from function
-         * calls, or a special parameter that will be set when functions are called by an external
-         * library.
-         *
-         * Use the predicate `FileStorage::instance()` to get references to instances of `werkzeug.datastructures.FileStorage`.
-         */
-        abstract deprecated class InstanceSourceApiNode extends API::Node { }
-
-        /** Gets a reference to an instance of `werkzeug.datastructures.FileStorage`. */
-        deprecated DataFlow::Node instance() {
-          result = any(InstanceSourceApiNode a).getAValueReachableFromSource()
-        }
-
-        private class FileStorageAdditionalTaintStep extends TaintTracking::AdditionalTaintStep {
-          override predicate step(DataFlow::Node nodeFrom, DataFlow::Node nodeTo) {
-            nodeFrom = instance() and
-            exists(DataFlow::AttrRead read | nodeTo = read |
-              read.getAttributeName() in [
-                  // str
-                  "filename", "name", "content_type", "mimetype",
-                  // file-like
-                  "stream",
-                  // TODO: werkzeug.datastructures.Headers
-                  "headers",
-                  // dict[str, str]
-                  "mimetype_params"
-                ] and
-              read.getObject() = nodeFrom
-            )
-          }
-        }
-      }
     }
   }
 }

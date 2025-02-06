@@ -4,14 +4,13 @@
  * It must export the following members:
  * ```ql
  * class Unit // a unit type
- * module AccessPathSyntax // a re-export of the AccessPathSyntax module
  * class InvokeNode // a type representing an invocation connected to the API graph
  * module API // the API graph module
  * predicate isPackageUsed(string package)
  * API::Node getExtraNodeFromPath(string package, string type, string path, int n)
- * API::Node getExtraSuccessorFromNode(API::Node node, AccessPathToken token)
- * API::Node getExtraSuccessorFromInvoke(InvokeNode node, AccessPathToken token)
- * predicate invocationMatchesExtraCallSiteFilter(InvokeNode invoke, AccessPathToken token)
+ * API::Node getExtraSuccessorFromNode(API::Node node, AccessPathTokenBase token)
+ * API::Node getExtraSuccessorFromInvoke(InvokeNode node, AccessPathTokenBase token)
+ * predicate invocationMatchesExtraCallSiteFilter(InvokeNode invoke, AccessPathTokenBase token)
  * InvokeNode getAnInvocationOf(API::Node node)
  * predicate isExtraValidTokenNameInIdentifyingAccessPath(string name)
  * predicate isExtraValidNoArgumentTokenInIdentifyingAccessPath(string name)
@@ -20,55 +19,104 @@
  */
 
 private import codeql.ruby.AST
-private import codeql.ruby.dataflow.internal.DataFlowPrivate as DataFlowPrivate
 private import ApiGraphModels
-
-class Unit = DataFlowPrivate::Unit;
-
+private import codeql.ruby.dataflow.internal.FlowSummaryImpl as FlowSummaryImpl
+private import codeql.dataflow.internal.AccessPathSyntax
 // Re-export libraries needed by ApiGraphModels.qll
 import codeql.ruby.ApiGraphs
-import codeql.ruby.dataflow.internal.AccessPathSyntax as AccessPathSyntax
 import codeql.ruby.DataFlow::DataFlow as DataFlow
-private import AccessPathSyntax
-private import codeql.ruby.dataflow.internal.FlowSummaryImplSpecific as FlowSummaryImplSpecific
-private import codeql.ruby.dataflow.internal.FlowSummaryImpl::Public
+private import FlowSummaryImpl::Public
 private import codeql.ruby.dataflow.internal.DataFlowDispatch as DataFlowDispatch
 
-/**
- * Holds if models describing `package` may be relevant for the analysis of this database.
- *
- * In the context of Ruby, this is the name of a Ruby gem.
- */
-bindingset[package]
-predicate isPackageUsed(string package) {
-  // For now everything is modeled as an access path starting at any top-level, so the package name has no effect.
-  //
-  // We allow an arbitrary package name so that the model can record the name of the package in case it's needed in the future.
-  //
-  // In principle we should consider a package to be "used" if there is a transitive dependency on it, but we can only
-  // reliably see the direct dependencies.
-  //
-  // In practice, packages try to use unique top-level module names, which mitigates the precision loss of not checking
-  // the package name.
-  any()
-}
-
-/** Gets a Ruby-specific interpretation of the `(package, type, path)` tuple after resolving the first `n` access path tokens. */
-bindingset[package, type, path]
-API::Node getExtraNodeFromPath(string package, string type, AccessPath path, int n) {
-  // A row of form `;any;Method[foo]` should match any method named `foo`.
-  exists(package) and
-  type = "any" and
-  n = 1 and
-  exists(EntryPointFromAnyType entry |
-    methodMatchedByName(path, entry.getName()) and
-    result = entry.getANode()
+pragma[nomagic]
+private predicate isUsedTopLevelConstant(string name) {
+  exists(ConstantAccess access |
+    access.getName() = name and
+    not exists(access.getScopeExpr())
   )
 }
 
-/** Gets a Ruby-specific interpretation of the `(package, type)` tuple. */
-API::Node getExtraNodeFromType(string package, string type) {
-  isRelevantFullPath(package, type, _) and // Allow any package name, see `isPackageUsed`.
+bindingset[rawType]
+predicate isTypeUsed(string rawType) {
+  exists(string consts |
+    parseType(rawType, consts, _) and
+    isUsedTopLevelConstant(consts.splitAt("::", 0))
+  )
+  or
+  rawType = ["", "any"]
+}
+
+bindingset[rawType]
+private predicate parseType(string rawType, string consts, string suffix) {
+  exists(string regexp |
+    regexp = "([^!]+)(!|)" and
+    consts = rawType.regexpCapture(regexp, 1) and
+    suffix = rawType.regexpCapture(regexp, 2)
+  )
+}
+
+/**
+ * Holds if `type` can be obtained from an instance of `otherType` due to
+ * language semantics modeled by `getExtraNodeFromType`.
+ */
+bindingset[otherType]
+predicate hasImplicitTypeModel(string type, string otherType) {
+  // A::B! can be used to obtain A::B
+  parseType(otherType, type, _)
+}
+
+private predicate parseRelevantType(string rawType, string consts, string suffix) {
+  isRelevantType(rawType) and
+  parseType(rawType, consts, suffix)
+}
+
+pragma[nomagic]
+private string getConstComponent(string consts, int n) {
+  parseRelevantType(_, consts, _) and
+  result = consts.splitAt("::", n)
+}
+
+private int getNumConstComponents(string consts) {
+  result = strictcount(int n | exists(getConstComponent(consts, n)))
+}
+
+private DataFlow::ConstRef getConstantFromConstPath(string consts, int n) {
+  n = 1 and
+  result = DataFlow::getConstant(getConstComponent(consts, 0))
+  or
+  result = getConstantFromConstPath(consts, n - 1).getConstant(getConstComponent(consts, n - 1))
+}
+
+private DataFlow::ConstRef getConstantFromConstPath(string consts) {
+  result = getConstantFromConstPath(consts, getNumConstComponents(consts))
+}
+
+/** Gets a Ruby-specific interpretation of the `(type, path)` tuple after resolving the first `n` access path tokens. */
+bindingset[type, path]
+API::Node getExtraNodeFromPath(string type, AccessPath path, int n) {
+  // A row of form `any;Method[foo]` should match any method named `foo`.
+  type = "any" and
+  n = 1 and
+  exists(string methodName, DataFlow::CallNode call |
+    methodMatchedByName(path, methodName) and
+    call.getMethodName() = methodName and
+    result.(API::MethodAccessNode).asCall() = call
+  )
+}
+
+/** Gets a Ruby-specific interpretation of the given `type`. */
+API::Node getExtraNodeFromType(string type) {
+  exists(string consts, string suffix, DataFlow::ConstRef constRef |
+    parseRelevantType(type, consts, suffix) and
+    constRef = getConstantFromConstPath(consts)
+  |
+    suffix = "!" and
+    result = constRef.track()
+    or
+    suffix = "" and
+    result = constRef.track().getInstance()
+  )
+  or
   type = "" and
   result = API::root()
 }
@@ -78,7 +126,7 @@ API::Node getExtraNodeFromType(string package, string type) {
  * matching anywhere, and the path begins with `Method[methodName]`.
  */
 private predicate methodMatchedByName(AccessPath path, string methodName) {
-  isRelevantFullPath(_, "any", path) and
+  isRelevantFullPath("any", path) and
   exists(AccessPathToken token |
     token = path.getToken(0) and
     token.getName() = "Method" and
@@ -87,25 +135,10 @@ private predicate methodMatchedByName(AccessPath path, string methodName) {
 }
 
 /**
- * An API graph entry point corresponding to a method name such as `foo` in `;any;Method[foo]`.
- *
- * This ensures that the API graph rooted in that method call is materialized.
- */
-private class EntryPointFromAnyType extends API::EntryPoint {
-  string name;
-
-  EntryPointFromAnyType() { this = "AnyMethod[" + name + "]" and methodMatchedByName(_, name) }
-
-  override DataFlow::CallNode getACall() { result.getMethodName() = name }
-
-  string getName() { result = name }
-}
-
-/**
  * Gets a Ruby-specific API graph successor of `node` reachable by resolving `token`.
  */
 bindingset[token]
-API::Node getExtraSuccessorFromNode(API::Node node, AccessPathToken token) {
+API::Node getExtraSuccessorFromNode(API::Node node, AccessPathTokenBase token) {
   token.getName() = "Member" and
   result = node.getMember(token.getAnArgument())
   or
@@ -116,12 +149,14 @@ API::Node getExtraSuccessorFromNode(API::Node node, AccessPathToken token) {
   result = node.getInstance()
   or
   token.getName() = "Parameter" and
-  result =
-    node.getASuccessor(API::Label::getLabelFromParameterPosition(FlowSummaryImplSpecific::parseArgBody(token
-              .getAnArgument())))
+  exists(DataFlowDispatch::ArgumentPosition argPos, DataFlowDispatch::ParameterPosition paramPos |
+    token.getAnArgument() = FlowSummaryImpl::Input::encodeArgumentPosition(argPos) and
+    DataFlowDispatch::parameterMatch(paramPos, argPos) and
+    result = node.getParameterAtPosition(paramPos)
+  )
   or
   exists(DataFlow::ContentSet contents |
-    SummaryComponent::content(contents) = FlowSummaryImplSpecific::interpretComponentSpecific(token) and
+    token.getName() = FlowSummaryImpl::Input::encodeContent(contents, token.getAnArgument()) and
     result = node.getContents(contents)
   )
 }
@@ -130,18 +165,39 @@ API::Node getExtraSuccessorFromNode(API::Node node, AccessPathToken token) {
  * Gets a Ruby-specific API graph successor of `node` reachable by resolving `token`.
  */
 bindingset[token]
-API::Node getExtraSuccessorFromInvoke(InvokeNode node, AccessPathToken token) {
+API::Node getExtraSuccessorFromInvoke(InvokeNode node, AccessPathTokenBase token) {
   token.getName() = "Argument" and
+  exists(DataFlowDispatch::ArgumentPosition argPos, DataFlowDispatch::ParameterPosition paramPos |
+    token.getAnArgument() = FlowSummaryImpl::Input::encodeParameterPosition(paramPos) and
+    DataFlowDispatch::parameterMatch(paramPos, argPos) and
+    result = node.getArgumentAtPosition(argPos)
+  )
+}
+
+pragma[inline]
+API::Node getAFuzzySuccessor(API::Node node) {
+  result = node.getAMember()
+  or
+  result = node.getMethod(_)
+  or
   result =
-    node.getASuccessor(API::Label::getLabelFromArgumentPosition(FlowSummaryImplSpecific::parseParamBody(token
-              .getAnArgument())))
+    node.getArgumentAtPosition(any(DataFlowDispatch::ArgumentPosition apos | not apos.isSelf()))
+  or
+  result =
+    node.getParameterAtPosition(any(DataFlowDispatch::ParameterPosition ppos | not ppos.isSelf()))
+  or
+  result = node.getReturn()
+  or
+  result = node.getAnElement()
+  or
+  result = node.getInstance()
 }
 
 /**
  * Holds if `invoke` matches the Ruby-specific call site filter in `token`.
  */
 bindingset[token]
-predicate invocationMatchesExtraCallSiteFilter(InvokeNode invoke, AccessPathToken token) {
+predicate invocationMatchesExtraCallSiteFilter(InvokeNode invoke, AccessPathTokenBase token) {
   token.getName() = "WithBlock" and
   exists(invoke.getBlock())
   or
@@ -152,7 +208,7 @@ predicate invocationMatchesExtraCallSiteFilter(InvokeNode invoke, AccessPathToke
 /** An API graph node representing a method call. */
 class InvokeNode extends API::MethodAccessNode {
   /** Gets the number of arguments to the call. */
-  int getNumArgument() { result = getCallNode().getNumberOfArguments() }
+  int getNumArgument() { result = this.asCall().getNumberOfArguments() }
 }
 
 /** Gets the `InvokeNode` corresponding to a specific invocation of `node`. */
@@ -185,8 +241,10 @@ predicate isExtraValidTokenArgumentInIdentifyingAccessPath(string name, string a
   or
   name = ["Argument", "Parameter"] and
   (
-    argument = ["self", "block", "any", "any-named"]
+    argument = ["self", "lambda-self", "block", "any", "any-named"]
     or
     argument.regexpMatch("\\w+:") // keyword argument
   )
 }
+
+module ModelOutputSpecific { }

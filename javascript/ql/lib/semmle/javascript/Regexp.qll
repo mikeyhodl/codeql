@@ -43,8 +43,6 @@ class RegExpParent extends Locatable, @regexpparent { }
  * ```
  */
 class RegExpTerm extends Locatable, @regexpterm {
-  override Location getLocation() { hasLocation(this, result) }
-
   /** Gets the `i`th child term of this term. */
   RegExpTerm getChild(int i) { regexpterm(result, _, this, i, _) }
 
@@ -176,6 +174,13 @@ class RegExpTerm extends Locatable, @regexpterm {
    * Gets a string that is matched by this regular-expression term.
    */
   string getAMatchedString() { result = this.getConstantValue() }
+
+  /** Holds if this term has the specified location. */
+  predicate hasLocationInfo(
+    string filepath, int startline, int startcolumn, int endline, int endcolumn
+  ) {
+    this.getLocation().hasLocationInfo(filepath, startline, startcolumn, endline, endcolumn)
+  }
 }
 
 /**
@@ -359,6 +364,9 @@ class RegExpAnchor extends RegExpTerm, @regexp_anchor {
   override predicate isNullable() { any() }
 
   override string getAPrimaryQlClass() { result = "RegExpAnchor" }
+
+  /** Gets the char for this term. */
+  abstract string getChar();
 }
 
 /**
@@ -372,6 +380,8 @@ class RegExpAnchor extends RegExpTerm, @regexp_anchor {
  */
 class RegExpCaret extends RegExpAnchor, @regexp_caret {
   override string getAPrimaryQlClass() { result = "RegExpCaret" }
+
+  override string getChar() { result = "^" }
 }
 
 /**
@@ -385,6 +395,8 @@ class RegExpCaret extends RegExpAnchor, @regexp_caret {
  */
 class RegExpDollar extends RegExpAnchor, @regexp_dollar {
   override string getAPrimaryQlClass() { result = "RegExpDollar" }
+
+  override string getChar() { result = "$" }
 }
 
 /**
@@ -926,7 +938,7 @@ private predicate isMatchObjectProperty(string name) {
 
 /** Holds if `call` is a call to `match` whose result is used in a way that is incompatible with Match objects. */
 private predicate isUsedAsNonMatchObject(DataFlow::MethodCallNode call) {
-  call.getMethodName() = "match" and
+  call.getMethodName() = ["match", "matchAll"] and
   call.getNumArgument() = 1 and
   (
     // Accessing a property that is absent on Match objects
@@ -941,6 +953,27 @@ private predicate isUsedAsNonMatchObject(DataFlow::MethodCallNode call) {
     or
     // Result is obviously unused
     call.asExpr() = any(ExprStmt stmt).getExpr()
+  )
+}
+
+/**
+ * Holds if `value` is used in a way that suggests it returns a number.
+ */
+pragma[inline]
+private predicate isUsedAsNumber(DataFlow::LocalSourceNode value) {
+  any(Comparison compare)
+      .hasOperands(value.getALocalUse().asExpr(), any(Expr e | e.analyze().getAType() = TTNumber()))
+  or
+  value.flowsToExpr(any(ArithmeticExpr e).getAnOperand())
+  or
+  value.flowsToExpr(any(UnaryExpr e | e.getOperator() = "-").getOperand())
+  or
+  value.flowsToExpr(any(IndexExpr expr).getPropertyNameExpr())
+  or
+  exists(DataFlow::CallNode call |
+    call.getCalleeName() =
+      ["substring", "substr", "slice", "splice", "charAt", "charCodeAt", "codePointAt", "toSpliced"] and
+    value.flowsTo(call.getAnArgument())
   )
 }
 
@@ -963,7 +996,7 @@ predicate isInterpretedAsRegExp(DataFlow::Node source) {
         not isNativeStringMethod(func, methodName)
       )
     |
-      methodName = "match" and
+      methodName = ["match", "matchAll"] and
       source = mce.getArgument(0) and
       mce.getNumArgument() = 1 and
       not isUsedAsNonMatchObject(mce)
@@ -971,9 +1004,9 @@ predicate isInterpretedAsRegExp(DataFlow::Node source) {
       methodName = "search" and
       source = mce.getArgument(0) and
       mce.getNumArgument() = 1 and
-      // "search" is a common method name, and so we exclude chained accesses
-      // because `String.prototype.search` returns a number
-      not exists(PropAccess p | p.getBase() = mce.getEnclosingExpr())
+      // "search" is a common method name, and the built-in "search" method is rarely used,
+      // so to reduce FPs we also require that the return value appears to be used as a number.
+      isUsedAsNumber(mce)
     )
     or
     exists(DataFlow::SourceNode schema | schema = JsonSchema::getAPartOfJsonSchema() |
@@ -987,28 +1020,6 @@ predicate isInterpretedAsRegExp(DataFlow::Node source) {
             .flow()
     )
   )
-}
-
-/**
- * Provides utility predicates related to regular expressions.
- */
-module RegExpPatterns {
-  /**
-   * Gets a pattern that matches common top-level domain names in lower case.
-   */
-  string getACommonTld() {
-    // according to ranking by http://google.com/search?q=site:.<<TLD>>
-    result = "(?:com|org|edu|gov|uk|net|io)(?![a-z0-9])"
-  }
-
-  /**
-   * Gets a pattern that matches common top-level domain names in lower case.
-   * DEPRECATED: use `getACommonTld` instead
-   */
-  deprecated predicate commonTld = getACommonTld/0;
-
-  /** DEPRECATED: Alias for commonTld */
-  deprecated predicate commonTLD = commonTld/0;
 }
 
 /**

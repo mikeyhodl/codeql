@@ -17,11 +17,11 @@ class MockitoVerifyMethod extends Method {
 }
 
 /**
- * A MethodAccess which is called as part of a Mockito verification setup.
+ * A MethodCall which is called as part of a Mockito verification setup.
  */
-class MockitoVerifiedMethodAccess extends MethodAccess {
-  MockitoVerifiedMethodAccess() {
-    this.getQualifier().(MethodAccess).getMethod() instanceof MockitoVerifyMethod
+class MockitoVerifiedMethodCall extends MethodCall {
+  MockitoVerifiedMethodCall() {
+    this.getQualifier().(MethodCall).getMethod() instanceof MockitoVerifyMethod
   }
 }
 
@@ -53,9 +53,11 @@ class MockitoInitedTest extends Class {
   MockitoInitedTest() {
     // Tests run with the Mockito runner.
     exists(RunWithAnnotation a | a = this.getAnAncestor().getAnAnnotation() |
+      a.getRunner().(RefType).hasQualifiedName("org.mockito.junit", "MockitoJUnitRunner")
+      or
+      // Deprecated styles.
       a.getRunner().(RefType).hasQualifiedName("org.mockito.runners", "MockitoJUnitRunner")
       or
-      // Deprecated style.
       a.getRunner().(RefType).hasQualifiedName("org.mockito.runners", "MockitoJUnit44Runner")
     )
     or
@@ -73,9 +75,7 @@ class MockitoInitedTest extends Class {
         m.calls*(initMocks)
       )
       or
-      exists(MethodAccess call | call.getCallee() = initMocks |
-        call.getArgument(0).getType() = this
-      )
+      exists(MethodCall call | call.getCallee() = initMocks | call.getArgument(0).getType() = this)
     )
   }
 }
@@ -299,7 +299,7 @@ private int mockableParameterCount(Constructor constructor) {
 /**
  * A class which is referenced by an `@InjectMocks` field.
  */
-library class MockitoMockInjectedClass extends Class {
+class MockitoMockInjectedClass extends Class {
   MockitoMockInjectedClass() {
     // There must be an `@InjectMock` field that has `this` as the type.
     exists(MockitoInjectedField injectedField | this = injectedField.getType())
@@ -381,12 +381,12 @@ class MockitoMockMethod extends Method {
 
 class MockitoMockedObject extends Expr {
   MockitoMockedObject() {
-    this.(MethodAccess).getMethod() instanceof MockitoMockMethod
+    this.(MethodCall).getMethod() instanceof MockitoMockMethod
     or
     this.(VarAccess).getVariable().getAnAssignedValue() instanceof MockitoMockedObject
     or
     exists(ReturnStmt ret |
-      this.(MethodAccess).getMethod() = ret.getEnclosingCallable() and
+      this.(MethodCall).getMethod() = ret.getEnclosingCallable() and
       ret.getResult() instanceof MockitoMockedObject
     )
   }

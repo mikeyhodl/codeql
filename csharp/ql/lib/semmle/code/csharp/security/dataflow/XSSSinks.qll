@@ -9,7 +9,7 @@ private import semmle.code.csharp.frameworks.system.Web
 private import semmle.code.csharp.frameworks.system.web.UI
 private import semmle.code.csharp.security.dataflow.flowsinks.Html
 private import semmle.code.csharp.security.dataflow.flowsinks.Remote
-private import semmle.code.csharp.dataflow.ExternalFlow
+private import semmle.code.csharp.dataflow.internal.ExternalFlow
 private import semmle.code.csharp.frameworks.ServiceStack::XSS
 
 /**
@@ -24,12 +24,10 @@ abstract class Sink extends DataFlow::ExprNode, RemoteFlowSink {
 }
 
 private class ExternalXssSink extends Sink {
-  ExternalXssSink() { sinkNode(this, "xss") }
+  ExternalXssSink() { sinkNode(this, "js-injection") }
 }
 
-private class HtmlSinkSink extends Sink {
-  HtmlSinkSink() { this instanceof HtmlSink }
-
+private class HtmlSinkSink extends Sink instanceof HtmlSink {
   override string explanation() {
     this instanceof WebPageWriteLiteralSink and
     result = "System.Web.WebPages.WebPage.WriteLiteral() method"
@@ -243,15 +241,6 @@ private class HttpResponseBaseSink extends Sink {
       // Calls to these methods, or overrides of them
       this.getExpr() = m.getAnOverrider*().getParameter(0).getAnAssignedArgument()
     )
-  }
-}
-
-/**
- * An expression passed as the `content` argument to the constructor of `StringContent`.
- */
-private class StringContentSinkModelCsv extends SinkModelCsv {
-  override predicate row(string row) {
-    row = "System.Net.Http;StringContent;false;StringContent;;;Argument[0];xss;manual"
   }
 }
 

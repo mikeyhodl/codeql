@@ -8,6 +8,7 @@ import SafeUrlFlowCustomizations
 import semmle.go.dataflow.barrierguardutil.RedirectCheckBarrierGuard
 import semmle.go.dataflow.barrierguardutil.RegexpCheck
 import semmle.go.dataflow.barrierguardutil.UrlCheck
+import semmle.go.dataflow.ExternalFlow
 
 /** Provides classes and predicates for the request forgery query. */
 module RequestForgery {
@@ -33,16 +34,30 @@ module RequestForgery {
   abstract class SanitizerEdge extends DataFlow::Node { }
 
   /**
-   * DEPRECATED: Use `Sanitizer` instead.
-   *
-   * A sanitizer guard for request forgery vulnerabilities.
+   * DEPRECATED: Use `ActiveThreatModelSource` or `Source` instead.
    */
-  abstract deprecated class SanitizerGuard extends DataFlow::BarrierGuard { }
+  deprecated class UntrustedFlowAsSource = ThreatModelFlowAsSource;
 
   /**
    * A third-party controllable input, considered as a flow source for request forgery.
    */
-  class UntrustedFlowAsSource extends Source, UntrustedFlowSource { }
+  private class ThreatModelFlowAsSource extends Source instanceof ActiveThreatModelSource { }
+
+  private class DefaultRequestForgerySink extends Sink {
+    string kind;
+
+    DefaultRequestForgerySink() {
+      exists(string modelKind | sinkNode(this, modelKind) |
+        modelKind = "request-forgery" and kind = "URL"
+        or
+        modelKind = "request-forgery[" + kind + "]"
+      )
+    }
+
+    override DataFlow::Node getARequest() { result = this }
+
+    override string getKind() { result = kind }
+  }
 
   /**
    * The URL of an HTTP request, viewed as a sink for request forgery.
@@ -102,9 +117,7 @@ module RequestForgery {
 }
 
 /** A sink for request forgery, considered as a sink for safe URL flow. */
-private class SafeUrlSink extends SafeUrlFlow::Sink {
-  SafeUrlSink() { this instanceof RequestForgery::Sink }
-}
+private class SafeUrlSink extends SafeUrlFlow::Sink instanceof RequestForgery::Sink { }
 
 /**
  * A read of a field considered unsafe for request forgery, considered as a sanitizer for a safe

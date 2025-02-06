@@ -36,6 +36,13 @@ class Element extends @element, Top {
    */
   predicate fromSource() { this.getCompilationUnit().isSourceFile() }
 
+  /**
+   * Holds if this element is from source and classified as a stub implementation.
+   * An implementation is considered a stub, if the the path to the
+   * source file contains `/stubs/`.
+   */
+  predicate isStub() { this.fromSource() and this.getFile().getAbsolutePath().matches("%/stubs/%") }
+
   /** Gets the compilation unit that this element belongs to. */
   CompilationUnit getCompilationUnit() { result = this.getFile() }
 
@@ -69,6 +76,10 @@ class Element extends @element, Top {
       i = 10 and result = "Forwarder for Kotlin calls that need default arguments filling in"
       or
       i = 11 and result = "Forwarder for a Kotlin class inheriting an interface default method"
+      or
+      i = 12 and result = "Argument for enum constructor call"
+      or
+      i = 13 and result = "The class around a local function, a lambda, or a function reference"
     )
   }
 }
@@ -104,7 +115,7 @@ private predicate hasChildElement(Element parent, Element e) {
   or
   params(e, _, _, parent, _)
   or
-  fields(e, _, _, parent, _)
+  fields(e, _, _, parent)
   or
-  typeVars(e, _, _, _, parent)
+  typeVars(e, _, _, parent)
 }

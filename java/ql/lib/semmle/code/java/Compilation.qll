@@ -31,7 +31,7 @@ class Compilation extends @compilation {
   }
 
   /** Gets a file compiled during this invocation. */
-  File getAFileCompiled() { result = getFileCompiled(_) }
+  File getAFileCompiled() { result = this.getFileCompiled(_) }
 
   /** Gets the `i`th file compiled during this invocation. */
   File getFileCompiled(int i) { compilation_compiling_files(this, i, result) }
@@ -76,12 +76,22 @@ class Compilation extends @compilation {
   /**
    * Gets an argument passed to the extractor on this invocation.
    */
-  string getAnArgument() { result = getArgument(_) }
+  string getAnArgument() { result = this.getArgument(_) }
 
   /**
    * Gets the `i`th argument passed to the extractor on this invocation.
    */
   string getArgument(int i) { compilation_args(this, i, result) }
+
+  /**
+   * Gets an expanded argument passed to the extractor on this invocation.
+   */
+  string getAnExpandedArgument() { result = this.getExpandedArgument(_) }
+
+  /**
+   * Gets the `i`th expanded argument passed to the extractor on this invocation.
+   */
+  string getExpandedArgument(int i) { compilation_expanded_args(this, i, result) }
 
   /**
    * Gets the total amount of CPU time spent processing all the files in the
@@ -143,4 +153,9 @@ class Compilation extends @compilation {
    * Holds if the extractor encountered non-recoverable errors.
    */
   predicate nonRecoverableErrors() { compilation_finished(this, _, _, 2) }
+
+  /**
+   * Gets the piece of compilation information with the given key, if any.
+   */
+  string getInfo(string key) { compilation_info(this, key, result) }
 }

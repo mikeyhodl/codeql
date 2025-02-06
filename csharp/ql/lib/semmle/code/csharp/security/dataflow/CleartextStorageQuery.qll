@@ -26,15 +26,18 @@ abstract class Sanitizer extends DataFlow::ExprNode { }
 /**
  * A taint-tracking configuration for cleartext storage of sensitive information.
  */
-class TaintTrackingConfiguration extends TaintTracking::Configuration {
-  TaintTrackingConfiguration() { this = "ClearTextStorage" }
+private module ClearTextStorageConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node source) { source instanceof Source }
 
-  override predicate isSource(DataFlow::Node source) { source instanceof Source }
+  predicate isSink(DataFlow::Node sink) { sink instanceof Sink }
 
-  override predicate isSink(DataFlow::Node sink) { sink instanceof Sink }
-
-  override predicate isSanitizer(DataFlow::Node node) { node instanceof Sanitizer }
+  predicate isBarrier(DataFlow::Node node) { node instanceof Sanitizer }
 }
+
+/**
+ * A taint-tracking module for cleartext storage of sensitive information.
+ */
+module ClearTextStorage = TaintTracking::Global<ClearTextStorageConfig>;
 
 /** A source of sensitive data. */
 class SensitiveExprSource extends Source {
@@ -56,6 +59,4 @@ class ProtectSanitizer extends Sanitizer {
 /**
  * An external location sink.
  */
-class ExternalSink extends Sink {
-  ExternalSink() { this instanceof ExternalLocationSink }
-}
+class ExternalSink extends Sink instanceof ExternalLocationSink { }

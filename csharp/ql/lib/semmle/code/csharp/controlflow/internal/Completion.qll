@@ -49,7 +49,10 @@ private newtype TCompletion =
     nestedFinallyCompletion(outer, nestLevel)
   }
 
-pragma[noinline]
+pragma[nomagic]
+private int getAFinallyNestLevel() { result = any(Statements::TryStmtTree t).nestLevel() }
+
+pragma[nomagic]
 private predicate nestedFinallyCompletion(Completion outer, int nestLevel) {
   (
     outer = TReturnCompletion()
@@ -64,7 +67,7 @@ private predicate nestedFinallyCompletion(Completion outer, int nestLevel) {
     or
     outer = TExitCompletion()
   ) and
-  nestLevel = any(Statements::TryStmtTree t).nestLevel()
+  nestLevel = getAFinallyNestLevel()
 }
 
 pragma[noinline]
@@ -103,7 +106,6 @@ abstract class Completion extends TCompletion {
    * otherwise it is a normal non-Boolean completion.
    */
   predicate isValidFor(ControlFlowElement cfe) {
-    cfe instanceof NonReturningCall and
     this = cfe.(NonReturningCall).getACompletion()
     or
     this = TThrowCompletion(cfe.(TriedControlFlowElement).getAThrownException())
@@ -199,6 +201,17 @@ private predicate isBooleanConstant(Expr e, boolean value) {
     value = false
     or
     isConstantComparison(e, value)
+    or
+    exists(Method m, Call c, Expr expr |
+      m = any(SystemStringClass s).getIsNullOrEmptyMethod() and
+      c.getTarget() = m and
+      e = c and
+      expr = c.getArgument(0) and
+      expr.hasValue() and
+      if expr.getValue().length() > 0 and not expr instanceof NullLiteral
+      then value = false
+      else value = true
+    )
   )
 }
 

@@ -36,12 +36,12 @@ Setup
 
 For this example you should download:
 
-- `CodeQL for Visual Studio Code <https://codeql.github.com/docs/codeql-for-visual-studio-code/setting-up-codeql-in-visual-studio-code/>`__
+- `CodeQL for Visual Studio Code <https://docs.github.com/en/code-security/codeql-for-vs-code/getting-started-with-codeql-for-vs-code/installing-codeql-for-vs-code>`__
 - A CodeQL database
 
 .. note::
 
-   Some notes about the project, perhaps a link to the project page on LGTM.
+   Some notes about the project.
 
 .. Agenda slide. Explaining what is to be covered in the presentation
 

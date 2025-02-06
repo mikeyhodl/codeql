@@ -11,18 +11,13 @@ import semmle.python.dataflow.new.DataFlow
 import semmle.python.dataflow.new.TaintTracking
 import XmlBombCustomizations::XmlBomb
 
-/**
- * A taint-tracking configuration for detecting "XML bomb" vulnerabilities.
- */
-class Configuration extends TaintTracking::Configuration {
-  Configuration() { this = "XmlBomb" }
+private module XmlBombConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node source) { source instanceof Source }
 
-  override predicate isSource(DataFlow::Node source) { source instanceof Source }
+  predicate isSink(DataFlow::Node sink) { sink instanceof Sink }
 
-  override predicate isSink(DataFlow::Node sink) { sink instanceof Sink }
-
-  override predicate isSanitizer(DataFlow::Node node) {
-    super.isSanitizer(node) or
-    node instanceof Sanitizer
-  }
+  predicate isBarrier(DataFlow::Node node) { node instanceof Sanitizer }
 }
+
+/** Global taint-tracking for detecting "XML bomb" vulnerabilities. */
+module XmlBombFlow = TaintTracking::Global<XmlBombConfig>;

@@ -1,10 +1,8 @@
 import java
 
-predicate isStringConcat(AddExpr ae) {
-  ae.getType() instanceof TypeString
-}
+predicate isStringConcat(AddExpr ae) { ae.getType() instanceof TypeString }
 
-from Method m, MethodAccess ma
+from Method m, MethodCall ma
 where
   m.getName().matches("sparql%Query") and
   ma.getMethod() = m and

@@ -7,7 +7,7 @@ void startServer(int heapSize);
 typedef unsigned long size_t;
 size_t strlen(const char *s);
 
-int main(int argc, char** argv) {
+int main1(int argc, char** argv) {
   int maxConnections = atoi(argv[1]);
 
   // BAD: arithmetic on a user input without any validation
@@ -93,6 +93,13 @@ int main(int argc, char** argv) {
     {
       len7--; // GOOD: can't underflow
     }
+  }
+
+  // GOOD: check the user input first
+  int maxConnections3 = atoi(argv[1]);
+  int maxConnections4 = atoi(argv[1]);
+  if (maxConnections3 == maxConnections4) {
+    startServer(maxConnections3 * 1000);
   }
 
   return 0;

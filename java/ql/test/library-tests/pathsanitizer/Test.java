@@ -26,6 +26,13 @@ public class Test {
                 sink(source); // $ hasTaintFlow
         }
         {
+            String source = (String) source();
+            if ("/safe/path".equals(source))
+                sink(source); // Safe
+            else
+                sink(source); // $ hasTaintFlow
+        }
+        {
             URI source = (URI) source();
             if (source.equals(new URI("http://safe/uri")))
                 sink(source); // Safe
@@ -279,7 +286,7 @@ public class Test {
     }
 
     private void blockListGuardValidation(String path) throws Exception {
-        if (path.contains("..") || !path.startsWith("/data"))
+        if (path.contains("..") || path.startsWith("/data"))
             throw new Exception();
     }
 

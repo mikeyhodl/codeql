@@ -3,7 +3,7 @@
 ## Introduction
 
 This document describes how to format the code you contribute to this repository. It covers aspects such as layout, white-space, naming, and documentation. Adhering to consistent standards makes code easier to read and maintain. Of course, these are only guidelines, and can be overridden as the need arises on a case-by-case basis. Where existing code deviates from these guidelines, prefer consistency with the surrounding code.
-Note, if you use [CodeQL for Visual Studio Code](https://codeql.github.com/docs/codeql-for-visual-studio-code/about-codeql-for-visual-studio-code/), you can autoformat your query in the editor.
+Note, if you use [CodeQL for Visual Studio Code](https://docs.github.com/en/code-security/codeql-for-vs-code/), you can autoformat your query in the editor.
 
 Words in *italic* are defined in the [Glossary](#glossary).
 
@@ -176,7 +176,7 @@ private predicate foo(Expr e, Expr p) {
 1. Acronyms *should* use normal PascalCase/camelCase. However, two-letter acronyms should have both letters capitalized.
 1. Newtype predicate names *should* begin with `T`.
 1. Predicates that have a result *should* be named `get...`
-1. Predicates that can return multiple results *should* be named `getA...` or `getAn...`
+1. Predicates that can have multiple results *should* be named `getA...` or `getAn...`
 1. Predicates that don't have a result or parameters *should* be named `is...` or `has...`
 1. *Avoid* underscores in names.
 1. *Avoid* short or single-letter names for classes, predicates and fields.
@@ -303,6 +303,7 @@ For more information about documenting the code that you contribute to this repo
 ```ql
   exists(Type arg | arg = this.getAChild() | arg instanceof TypeParameter)
 ```
+
 
 ```ql
   exists(Type qualifierType |

@@ -1,4 +1,5 @@
 name: codeql/ql-examples
 groups: [ql, examples]
 dependencies:
-    codeql/ql: "*"
+    codeql/ql: ${workspace}
+warnOnImplicitThis: true

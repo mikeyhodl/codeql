@@ -26,21 +26,31 @@ predicate intentionallyReturnsStackPointer(Function f) {
 class ReturnStackAllocatedMemoryConfig extends MustFlowConfiguration {
   ReturnStackAllocatedMemoryConfig() { this = "ReturnStackAllocatedMemoryConfig" }
 
-  override predicate isSource(DataFlow::Node source) {
-    // Holds if `source` is a node that represents the use of a stack variable
-    exists(VariableAddressInstruction var, Function func |
-      var = source.asInstruction() and
-      func = var.getEnclosingFunction() and
-      var.getAstVariable() instanceof StackVariable and
-      // Pointer-to-member types aren't properly handled in the dbscheme.
-      not var.getResultType() instanceof PointerToMemberType and
+  override predicate isSource(Instruction source) {
+    exists(Function func |
       // Rule out FPs caused by extraction errors.
-      not any(ErrorExpr e).getEnclosingFunction() = func and
-      not intentionallyReturnsStackPointer(func)
+      not func.hasErrors() and
+      not intentionallyReturnsStackPointer(func) and
+      func = source.getEnclosingFunction()
+    |
+      // `source` is an instruction that represents the use of a stack variable
+      exists(VariableAddressInstruction var |
+        var = source and
+        var.getAstVariable() instanceof StackVariable and
+        // Pointer-to-member types aren't properly handled in the dbscheme.
+        not var.getResultType() instanceof PointerToMemberType
+      )
+      or
+      // `source` is an instruction that represents the return value of a
+      // function that is known to return stack-allocated memory.
+      exists(Call call |
+        call.getTarget().hasGlobalName(["alloca", "strdupa", "strndupa", "_alloca", "_malloca"]) and
+        source.getUnconvertedResultExpression() = call
+      )
     )
   }
 
-  override predicate isSink(DataFlow::Node sink) {
+  override predicate isSink(Operand sink) {
     // Holds if `sink` is a node that represents the `StoreInstruction` that is subsequently used in
     // a `ReturnValueInstruction`.
     // We use the `StoreInstruction` instead of the instruction that defines the
@@ -48,7 +58,7 @@ class ReturnStackAllocatedMemoryConfig extends MustFlowConfiguration {
     exists(StoreInstruction store |
       store.getDestinationAddress().(VariableAddressInstruction).getIRVariable() instanceof
         IRReturnVariable and
-      sink.asOperand() = store.getSourceValueOperand()
+      sink = store.getSourceValueOperand()
     )
   }
 
@@ -77,18 +87,20 @@ class ReturnStackAllocatedMemoryConfig extends MustFlowConfiguration {
    * }
    * ```
    */
-  override predicate isAdditionalFlowStep(DataFlow::Node node1, DataFlow::Node node2) {
-    node2.asInstruction().(FieldAddressInstruction).getObjectAddressOperand() = node1.asOperand()
+  override predicate isAdditionalFlowStep(Operand node1, Instruction node2) {
+    node2.(FieldAddressInstruction).getObjectAddressOperand() = node1
     or
-    node2.asInstruction().(PointerOffsetInstruction).getLeftOperand() = node1.asOperand()
+    node2.(PointerOffsetInstruction).getLeftOperand() = node1
   }
+
+  override predicate isBarrier(Instruction n) { n.getResultType() instanceof ErroneousType }
 }
 
 from
-  MustFlowPathNode source, MustFlowPathNode sink, VariableAddressInstruction var,
+  MustFlowPathNode source, MustFlowPathNode sink, Instruction instr,
   ReturnStackAllocatedMemoryConfig conf
 where
   conf.hasFlowPath(pragma[only_bind_into](source), pragma[only_bind_into](sink)) and
-  source.getNode().asInstruction() = var
-select sink.getNode(), source, sink, "May return stack-allocated memory from $@.", var.getAst(),
-  var.getAst().toString()
+  source.getInstruction() = instr
+select sink.getInstruction(), source, sink, "May return stack-allocated memory from $@.",
+  instr.getAst(), instr.getAst().toString()

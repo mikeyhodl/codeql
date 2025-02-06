@@ -2,21 +2,34 @@
 
 import java
 private import semmle.code.java.dataflow.ExternalFlow
-private import semmle.code.java.dataflow.TaintTracking
-private import semmle.code.java.frameworks.android.Intent
+private import semmle.code.java.dataflow.FlowSources
 private import semmle.code.java.frameworks.android.PendingIntent
 
-/** A source for an implicit `PendingIntent` flow. */
-abstract class ImplicitPendingIntentSource extends DataFlow::Node {
-  /** Holds if this source has the specified `state`. */
-  predicate hasState(DataFlow::FlowState state) { state = "" }
+private newtype TPendingIntentState =
+  TMutablePendingIntent() or
+  TNoState()
+
+/** A flow state for an implicit `PendingIntent` flow. */
+class PendingIntentState extends TPendingIntentState {
+  /** Gets a textual representation of this element. */
+  abstract string toString();
 }
 
-/** A sink that sends an implicit and mutable `PendingIntent` to a third party. */
-abstract class ImplicitPendingIntentSink extends DataFlow::Node {
-  /** Holds if this sink has the specified `state`. */
-  predicate hasState(DataFlow::FlowState state) { state = "" }
+/** A flow state indicating that a mutable `PendingIntent` has been created. */
+class MutablePendingIntent extends PendingIntentState, TMutablePendingIntent {
+  override string toString() { result = "MutablePendingIntent" }
 }
+
+/** The initial flow state for an implicit `PendingIntent` flow. */
+class NoState extends PendingIntentState, TNoState {
+  override string toString() { result = "NoState" }
+}
+
+/** A source for an implicit `PendingIntent` flow. */
+abstract class ImplicitPendingIntentSource extends ApiSourceNode { }
+
+/** A sink that sends an implicit and mutable `PendingIntent` to a third party. */
+abstract class ImplicitPendingIntentSink extends DataFlow::Node { }
 
 /**
  * A unit class for adding additional taint steps.
@@ -32,16 +45,9 @@ class ImplicitPendingIntentAdditionalTaintStep extends Unit {
   predicate step(DataFlow::Node node1, DataFlow::Node node2) { none() }
 
   /**
-   * Holds if the step from `node1` to `node2` should be considered a taint
-   * step for flows related to the use of implicit `PendingIntent`s. This step is only applicable
-   * in `state1` and updates the flow state to `state2`.
+   * Holds if the step from `node1` to `node2` creates a mutable `PendingIntent`.
    */
-  predicate step(
-    DataFlow::Node node1, DataFlow::FlowState state1, DataFlow::Node node2,
-    DataFlow::FlowState state2
-  ) {
-    none()
-  }
+  predicate mutablePendingIntentCreation(DataFlow::Node node1, DataFlow::Node node2) { none() }
 }
 
 private class IntentCreationSource extends ImplicitPendingIntentSource {
@@ -54,28 +60,22 @@ private class IntentCreationSource extends ImplicitPendingIntentSource {
 
 private class SendPendingIntent extends ImplicitPendingIntentSink {
   SendPendingIntent() {
-    sinkNode(this, "intent-start") and
+    // intent redirection sinks are method calls that start Android components
+    sinkNode(this, "intent-redirection") and
     // implicit intents can't be started as services since API 21
-    not exists(MethodAccess ma, Method m |
+    not exists(MethodCall ma, Method m |
       ma.getMethod() = m and
       m.getDeclaringType().getAnAncestor() instanceof TypeContext and
       m.getName().matches(["start%Service%", "bindService%"]) and
       this.asExpr() = ma.getArgument(0)
     )
     or
-    sinkNode(this, "pending-intent-sent")
+    sinkNode(this, "pending-intents")
   }
-
-  override predicate hasState(DataFlow::FlowState state) { state = "MutablePendingIntent" }
 }
 
 private class MutablePendingIntentFlowStep extends ImplicitPendingIntentAdditionalTaintStep {
-  override predicate step(
-    DataFlow::Node node1, DataFlow::FlowState state1, DataFlow::Node node2,
-    DataFlow::FlowState state2
-  ) {
-    state1 = "" and
-    state2 = "MutablePendingIntent" and
+  override predicate mutablePendingIntentCreation(DataFlow::Node node1, DataFlow::Node node2) {
     exists(PendingIntentCreation pic, Argument flagArg |
       node1.asExpr() = pic.getIntentArg() and
       node2.asExpr() = pic and
@@ -85,42 +85,20 @@ private class MutablePendingIntentFlowStep extends ImplicitPendingIntentAddition
       // unless it is at least sometimes explicitly marked immutable and never marked mutable.
       // Note: for API level < 31, PendingIntents were mutable by default, whereas since then
       // they are immutable by default.
-      not TaintTracking::localExprTaint(any(ImmutablePendingIntentFlag flag).getAnAccess(), flagArg)
+      not bitwiseLocalTaintStep*(DataFlow::exprNode(any(ImmutablePendingIntentFlag flag)
+              .getAnAccess()), DataFlow::exprNode(flagArg))
       or
-      TaintTracking::localExprTaint(any(MutablePendingIntentFlag flag).getAnAccess(), flagArg)
+      bitwiseLocalTaintStep*(DataFlow::exprNode(any(MutablePendingIntentFlag flag).getAnAccess()),
+        DataFlow::exprNode(flagArg))
     )
   }
 }
 
-private class PendingIntentSentSinkModels extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "androidx.slice;SliceProvider;true;onBindSlice;;;ReturnValue;pending-intent-sent;manual",
-        "androidx.slice;SliceProvider;true;onCreatePermissionRequest;;;ReturnValue;pending-intent-sent;manual",
-        "android.app;NotificationManager;true;notify;(int,Notification);;Argument[1];pending-intent-sent;manual",
-        "android.app;NotificationManager;true;notify;(String,int,Notification);;Argument[2];pending-intent-sent;manual",
-        "android.app;NotificationManager;true;notifyAsPackage;(String,String,int,Notification);;Argument[3];pending-intent-sent;manual",
-        "android.app;NotificationManager;true;notifyAsUser;(String,int,Notification,UserHandle);;Argument[2];pending-intent-sent;manual",
-        "androidx.core.app;NotificationManagerCompat;true;notify;(int,Notification);;Argument[1];pending-intent-sent;manual",
-        "androidx.core.app;NotificationManagerCompat;true;notify;(String,int,Notification);;Argument[2];pending-intent-sent;manual",
-        "android.app;PendingIntent;false;send;(Context,int,Intent,OnFinished,Handler,String,Bundle);;Argument[2];pending-intent-sent;manual",
-        "android.app;PendingIntent;false;send;(Context,int,Intent,OnFinished,Handler,String);;Argument[2];pending-intent-sent;manual",
-        "android.app;PendingIntent;false;send;(Context,int,Intent,OnFinished,Handler);;Argument[2];pending-intent-sent;manual",
-        "android.app;PendingIntent;false;send;(Context,int,Intent);;Argument[2];pending-intent-sent;manual",
-        "android.app;Activity;true;setResult;(int,Intent);;Argument[1];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;set;(int,long,PendingIntent);;Argument[2];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setAlarmClock;;;Argument[1];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setAndAllowWhileIdle;;;Argument[2];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setExact;(int,long,PendingIntent);;Argument[2];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setExactAndAllowWhileIdle;;;Argument[2];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setInexactRepeating;;;Argument[3];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setRepeating;;;Argument[3];pending-intent-sent;manual",
-        "android.app;AlarmManager;true;setWindow;(int,long,long,PendingIntent);;Argument[3];pending-intent-sent;manual",
-        "androidx.core.app;AlarmManagerCompat;true;setAlarmClock;;;Argument[2..3];pending-intent-sent;manual",
-        "androidx.core.app;AlarmManagerCompat;true;setAndAllowWhileIdle;;;Argument[3];pending-intent-sent;manual",
-        "androidx.core.app;AlarmManagerCompat;true;setExact;;;Argument[3];pending-intent-sent;manual",
-        "androidx.core.app;AlarmManagerCompat;true;setExactAndAllowWhileIdle;;;Argument[3];pending-intent-sent;manual",
-      ]
-  }
+/**
+ * Holds if taint can flow from `source` to `sink` in one local step,
+ * including bitwise operations.
+ */
+private predicate bitwiseLocalTaintStep(DataFlow::Node source, DataFlow::Node sink) {
+  TaintTracking::localTaintStep(source, sink) or
+  source.asExpr() = sink.asExpr().(BitwiseExpr).(BinaryExpr).getAnOperand()
 }

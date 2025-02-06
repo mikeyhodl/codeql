@@ -28,19 +28,12 @@ module ImproperCodeSanitization {
   /**
    * A call to an HTML sanitizer seen as a source for improper code sanitization
    */
-  class HtmlSanitizerCallAsSource extends Source {
-    HtmlSanitizerCallAsSource() { this instanceof HtmlSanitizerCall }
-  }
+  class HtmlSanitizerCallAsSource extends Source instanceof HtmlSanitizerCall { }
 
   /**
    * A call to `JSON.stringify()` seen as a source for improper code sanitization
    */
-  class JsonStringifyAsSource extends Source {
-    JsonStringifyAsSource() { this instanceof JsonStringifyCall }
-  }
-
-  /** DEPRECATED: Alias for JsonStringifyAsSource */
-  deprecated class JSONStringifyAsSource = JsonStringifyAsSource;
+  class JsonStringifyAsSource extends Source instanceof JsonStringifyCall { }
 
   /**
    * A leaf in a string-concatenation, where the string-concatenation constructs code that looks like a function.

@@ -7,9 +7,11 @@ import com.semmle.js.ast.Identifier;
 import com.semmle.js.ast.Literal;
 import com.semmle.js.ast.MemberExpression;
 import com.semmle.js.ast.TemplateElement;
+import com.semmle.js.ast.ThisExpression;
 import com.semmle.js.extractor.ASTExtractor.IdContext;
 import com.semmle.ts.ast.ArrayTypeExpr;
 import com.semmle.ts.ast.ConditionalTypeExpr;
+import com.semmle.js.ast.DynamicImport;
 import com.semmle.ts.ast.FunctionTypeExpr;
 import com.semmle.ts.ast.GenericTypeExpr;
 import com.semmle.ts.ast.ImportTypeExpr;
@@ -97,6 +99,11 @@ public class TypeExprKinds {
                   return thisVarTypeAccess;
                 }
                 return keywordTypeExpr;
+              }
+
+              @Override
+              public Integer visit(ThisExpression nd, Void c) {
+                return thisVarTypeAccess;
               }
 
               @Override
@@ -221,8 +228,7 @@ public class TypeExprKinds {
                 return inferTypeExpr;
               }
 
-              @Override
-              public Integer visit(ImportTypeExpr nd, Void c) {
+              private Integer handleInlineImport() {
                 switch (idcontext) {
                   case NAMESPACE_BIND:
                     return importNamespaceAccess;
@@ -233,6 +239,17 @@ public class TypeExprKinds {
                   default:
                     return importTypeAccess;
                 }
+              }
+
+              @Override
+              public Integer visit(ImportTypeExpr nd, Void c) {
+                return handleInlineImport();
+              }
+
+              @Override
+              public Integer visit(DynamicImport nd, Void c) {
+                // These may appear in interface 'extend' clauses
+                return handleInlineImport();
               }
 
               @Override

@@ -7,17 +7,12 @@ import semmle.code.java.frameworks.Servlets
  * Any class which extends the `Servlet` interface is intended to be constructed reflectively by a
  * servlet container.
  */
-class ServletConstructedClass extends ReflectivelyConstructedClass {
+class ServletConstructedClass extends ReflectivelyConstructedClass instanceof ServletClass {
   ServletConstructedClass() {
-    this instanceof ServletClass and
     // If we have seen any `web.xml` files, this servlet will be considered to be live only if it is
     // referred to as a servlet-class in at least one. If no `web.xml` files are found, we assume
     // that XML extraction was not enabled, and therefore consider all `Servlet` classes as live.
-    (
-      isWebXmlIncluded()
-      implies
-      exists(WebServletClass servletClass | this = servletClass.getClass())
-    )
+    isWebXmlIncluded() implies exists(WebServletClass servletClass | this = servletClass.getClass())
   }
 }
 
@@ -62,9 +57,6 @@ class GwtEntryPointConstructedClass extends ReflectivelyConstructedClass {
   GwtEntryPointConstructedClass() { this.(GwtEntryPointClass).isLive() }
 }
 
-/** DEPRECATED: Alias for GwtEntryPointConstructedClass */
-deprecated class GWTEntryPointConstructedClass = GwtEntryPointConstructedClass;
-
 /**
  * Servlets referred to from a GWT module config file.
  */
@@ -83,9 +75,6 @@ class GwtServletClass extends ReflectivelyConstructedClass {
     )
   }
 }
-
-/** DEPRECATED: Alias for GwtServletClass */
-deprecated class GWTServletClass = GwtServletClass;
 
 /**
  * Methods that may be called reflectively by the UiHandler framework.
@@ -112,6 +101,4 @@ class GwtUiBinderEntryPoint extends CallableEntryPoint {
 /**
  * Fields that may be reflectively read or written to by the UiBinder framework.
  */
-class GwtUiBinderReflectivelyReadField extends ReflectivelyReadField {
-  GwtUiBinderReflectivelyReadField() { this instanceof GwtUiField }
-}
+class GwtUiBinderReflectivelyReadField extends ReflectivelyReadField instanceof GwtUiField { }

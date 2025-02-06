@@ -67,6 +67,7 @@ import semmle.javascript.YAML
 import semmle.javascript.dataflow.DataFlow
 import semmle.javascript.dataflow.TaintTracking
 import semmle.javascript.dataflow.TypeInference
+import semmle.javascript.frameworks.ActionsLib
 import semmle.javascript.frameworks.Angular2
 import semmle.javascript.frameworks.AngularJS
 import semmle.javascript.frameworks.Anser
@@ -80,6 +81,7 @@ import semmle.javascript.frameworks.Classnames
 import semmle.javascript.frameworks.ClassValidator
 import semmle.javascript.frameworks.ClientRequests
 import semmle.javascript.frameworks.ClosureLibrary
+import semmle.javascript.frameworks.CommandLineArguments
 import semmle.javascript.frameworks.CookieLibraries
 import semmle.javascript.frameworks.Credentials
 import semmle.javascript.frameworks.CryptoLibraries
@@ -99,7 +101,6 @@ import semmle.javascript.frameworks.JWT
 import semmle.javascript.frameworks.Handlebars
 import semmle.javascript.frameworks.History
 import semmle.javascript.frameworks.Immutable
-import semmle.javascript.frameworks.ImportGeneratedModels
 import semmle.javascript.frameworks.Knex
 import semmle.javascript.frameworks.LazyCache
 import semmle.javascript.frameworks.LdapJS
@@ -134,6 +135,7 @@ import semmle.javascript.frameworks.TrustedTypes
 import semmle.javascript.frameworks.UriLibraries
 import semmle.javascript.frameworks.Vue
 import semmle.javascript.frameworks.Vuex
+import semmle.javascript.frameworks.Webix
 import semmle.javascript.frameworks.WebSocket
 import semmle.javascript.frameworks.XmlParsers
 import semmle.javascript.frameworks.xUnit

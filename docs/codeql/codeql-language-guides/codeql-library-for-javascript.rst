@@ -43,7 +43,7 @@ Textual level
 
 At its most basic level, a JavaScript code base can simply be viewed as a collection of files organized into folders, where each file is composed of zero or more lines of text.
 
-Note that the textual content of a program is not included in the CodeQL database unless you specifically request it during extraction. In particular, databases on LGTM (also known as "snapshots") do not normally include textual information.
+Note that the textual content of a program is not included in the CodeQL database unless you specifically request it during extraction.
 
 Files and folders
 ^^^^^^^^^^^^^^^^^
@@ -77,7 +77,7 @@ For example, the following query computes, for each folder, the number of JavaSc
    from Folder d
    select d.getRelativePath(), count(File f | f = d.getAFile() and f.getExtension() = "js")
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/1506075865985/>`__. When you run the query on most projects, the results include folders that contain files with a ``js`` extension and folders that don't.
+When you run the query on most projects, the results include folders that contain files with a ``js`` extension and folders that don't.
 
 Locations
 ^^^^^^^^^
@@ -138,7 +138,7 @@ As an example of a query operating entirely on the lexical level, consider the f
    where comma.getNextToken() instanceof CommaToken
    select comma, "Omitted array elements are bad style."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/659662177/>`__. If the query returns no results, this pattern isn't used in the projects that you analyzed.
+If the query returns no results, this pattern isn't used in the projects that you analyzed.
 
 You can use predicate ``Locatable.getFirstToken()`` and ``Locatable.getLastToken()`` to access the first and last token (if any) belonging to an element with a source location.
 
@@ -179,8 +179,6 @@ As an example of a query using only lexical information, consider the following 
    from HtmlLineComment c
    select c, "Do not use HTML comments."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/686330023/>`__. When we ran this query on the *mozilla/pdf.js* project in LGTM.com, we found three HTML comments.
-
 Syntactic level
 ~~~~~~~~~~~~~~~
 
@@ -195,7 +193,7 @@ The class `ASTNode <https://codeql.github.com/codeql-standard-libraries/javascri
 .. pull-quote::
 
    Note
-   
+
    These predicates should only be used to perform generic AST traversal. To access children of specific AST node types, the specialized predicates introduced below should be used instead. In particular, queries should not rely on the numeric indices of child nodes relative to their parent nodes: these are considered an implementation detail that may change between versions of the library.
 
 Top-levels
@@ -230,7 +228,7 @@ The `TopLevel <https://codeql.github.com/codeql-standard-libraries/javascript/se
 
    Note
 
-   By default, LGTM filters out alerts in minified top-levels, since they are often hard to interpret. When writing your own queries in the LGTM query console, this filtering is *not* done automatically, so you may want to explicitly add a condition of the form ``and not e.getTopLevel().isMinified()`` or similar to your query to exclude results in minified code.
+   By default, GitHub code scanning filters out alerts in minified top-levels, since they are often hard to interpret. When you write your own queries in Visual Studio Code, this filtering is *not* done automatically, so you may want to explicitly add a condition of the form ``and not e.getTopLevel().isMinified()`` or similar to your query to exclude results in minified code.
 
 Statements and expressions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -351,8 +349,6 @@ As an example of how to use expression AST nodes, here is a query that finds exp
    where add = shift.getAnOperand()
    select add, "This expression should be bracketed to clarify precedence rules."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/690010024/>`__. When we ran this query on the *meteor/meteor* project in LGTM.com, we found many results where precedence could be clarified using brackets.
-
 Functions
 ^^^^^^^^^
 
@@ -373,8 +369,6 @@ As an example, here is a query that finds all expression closures:
    where fe.getBody() instanceof Expr
    select fe, "Use arrow expressions instead of expression closures."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/668510056/>`__. None of the LGTM.com demo projects uses expression closures, but you may find this query gets results on other projects.
-
 As another example, this query finds functions that have two parameters that bind the same variable:
 
 .. code-block:: ql
@@ -387,8 +381,6 @@ As another example, this query finds functions that have two parameters that bin
        i < j and
        p.getAVariable() = q.getAVariable()
    select fun, "This function has two parameters that bind the same variable."
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/673860037/>`__. None of the LGTM.com demo projects has functions where two parameters bind the same variable.
 
 Classes
 ^^^^^^^
@@ -444,7 +436,7 @@ Here is an example of a query to find declaration statements that declare the sa
        not ds.getTopLevel().isMinified()
    select ds, "Variable " + v.getName() + " is declared both $@ and $@.", d1, "here", d2, "here"
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/668700496/>`__. This is not a common problem, so you may not find any results in your own projects. The *angular/angular.js* project on LGTM.com has one instance of this problem at the time of writing.
+This is not a common problem, so you may not find any results in your own projects.
 
    Notice the use of ``not ... isMinified()`` here and in the next few queries. This excludes any results found in minified code. If you delete ``and not ds.getTopLevel().isMinified()`` and re-run the query, two results in minified code in the *meteor/meteor* project are reported.
 
@@ -470,8 +462,6 @@ As an example of a query involving properties, consider the following query that
        p1.getName() = p2.getName() and
        not oe.getTopLevel().isMinified()
    select oe, "Property " + p1.getName() + " is defined both $@ and $@.", p1, "here", p2, "here"
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/660700064/>`__. Many projects have a few instances of object expressions with two identically named properties.
 
 Modules
 ^^^^^^^
@@ -537,7 +527,7 @@ As an example, consider the following query which finds distinct function declar
        not g.getTopLevel().isMinified()
    select f, g
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/667290067/>`__. Some projects declare conflicting functions of the same name and rely on platform-specific behavior to disambiguate the two declarations.
+Some projects declare conflicting functions of the same name and rely on platform-specific behavior to disambiguate the two declarations.
 
 Control flow
 ~~~~~~~~~~~~
@@ -574,7 +564,7 @@ As an example of an analysis using basic blocks, ``BasicBlock.isLiveAtEntry(v, u
        not f.getStartBB().isLiveAtEntry(gv, _)
    select f, "This function uses " + gv + " like a local variable."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/686320048/>`__. Many projects have some variables which look as if they were intended to be local.
+Many projects have some variables which look as if they were intended to be local.
 
 Data flow
 ~~~~~~~~~
@@ -598,8 +588,6 @@ As an example, the following query finds definitions of local variables that are
    where v = def.getAVariable() and
        not exists (VarUse use | def = use.getADef())
    select def, "Dead store of local variable."
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/2086440429/>`__. Many projects have some examples of useless assignments to local variables.
 
 SSA
 ^^^
@@ -641,8 +629,6 @@ For example, here is a query that finds all invocations of a method called ``sen
          resNode.getASuccessor+() = DataFlow::valueNode(send.getReceiver()) and
          send.getMethodName() = "send"
    select send
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/1506058347056/>`__. The query finds HTTP response sends in the `AMP HTML <https://lgtm.com/projects/g/ampproject/amphtml>`__ project.
 
 Note that the data flow modeling in this library is intraprocedural, that is, flow across function calls and returns is *not* modeled. Likewise, flow through object properties and global variables is not modeled.
 
@@ -707,8 +693,6 @@ As an example of a call-graph-based query, here is a query to find invocations f
          not exists(invk.getACallee())
    select invk, "Unable to find a callee for this invocation."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/3260345690335671362/>`__
-
 Inter-procedural data flow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -716,77 +700,43 @@ The data flow graph-based analyses described so far are all intraprocedural: the
 
 We distinguish here between data flow proper, and *taint tracking*: the latter not only considers value-preserving flow (such as from variable definitions to uses), but also cases where one value influences ("taints") another without determining it entirely. For example, in the assignment ``s2 = s1.substring(i)``, the value of ``s1`` influences the value of ``s2``, because ``s2`` is assigned a substring of ``s1``. In general, ``s2`` will not be assigned ``s1`` itself, so there is no data flow from ``s1`` to ``s2``, but ``s1`` still taints ``s2``.
 
-The simplest way of implementing an interprocedural data flow analysis is to extend either class ``DataFlow::TrackedNode`` or ``DataFlow::TrackedExpr``. The former is a subclass of ``DataFlow::Node``, the latter of ``Expr``, and extending them ensures that the newly added values are tracked interprocedurally. You can use the predicate ``flowsTo`` to find out which nodes/expressions the tracked value flows to.
+It is a common pattern that we wish to specify data flow or taint analysis in terms of its *sources* (where flow starts), *sinks* (where it should be tracked), and *barriers* (also called *sanitizers*) where flow is interrupted. Sanitizers they are very common in security analyses: for example, an analysis that tracks the flow of untrusted user input into, say, a SQL query has to keep track of code that validates the input, thereby making it safe to use. Such a validation step is an example of a sanitizer.
 
-For example, suppose that we are developing an analysis to find hard-coded passwords. We might start by writing a simple query that looks for string constants flowing into variables named ``"password"``. To do this, we can extend ``TrackedExpr`` to track all constant strings, ``flowsTo`` to find cases where such a string flows into a (SSA) definition of a password variable:
+A module implementing the signature `DataFlow::ConfigSig` may specify a data flow or taint analysis by implementing the following predicates:
+
+-  ``isSource(DataFlow::Node nd)`` selects all nodes ``nd`` from where flow tracking starts.
+-  ``isSink(DataFlow::Node nd)`` selects all nodes ``nd`` to which the flow is tracked.
+-  ``isBarrier(DataFlow::Node nd)`` selects all nodes ``nd`` that act as a barrier/sanitizer for data flow.
+-  ``isAdditionalFlowStep(DataFlow::Node src, DataFlow::Node trg)`` allows specifying custom additional flow steps for this analysis.
+
+Such a module can be passed to ``DataFlow::Global<...>``. This will produce a module with a ``flow`` predicate that performs the actual flow tracking, starting at a source and looking for flow to a sink that does not pass through a barrier node.
+
+For example, suppose that we are developing an analysis to find hard-coded passwords. We might write a simple query that looks for string constants flowing into variables named ``"password"``.
 
 .. code-block:: ql
 
    import javascript
 
-   class TrackedStringLiteral extends DataFlow::TrackedNode {
-       TrackedStringLiteral() {
-           this.asExpr() instanceof ConstantString
-       }
+   module PasswordConfig implements DataFlow::ConfigSig {
+       predicate isSource(DataFlow::Node nd) { nd.asExpr() instanceof StringLiteral }
+
+       predicate isSink(DataFlow::Node nd) { passwordVarAssign(_, nd) }
    }
 
-   from TrackedStringLiteral source, DataFlow::Node sink, SsaExplicitDefinition def
-   where source.flowsTo(sink) and sink = DataFlow::ssaDefinitionNode(def) and
-         def.getSourceVariable().getName().toLowerCase() = "password"
-   select sink
+   predicate passwordVarAssign(Variable v, DataFlow::Node nd) {
+       v.getAnAssignedExpr() = nd.asExpr() and
+       v.getName().toLowerCase() = "password"
+   }
 
-Note that ``TrackedNode`` and ``TrackedExpr`` do not restrict the set of "sinks" for the inter-procedural flow analysis, tracking flow into any expression that they might flow to. This can be expensive for large code bases, and is often unnecessary, since usually you are only interested in flow to a particular set of sinks. For example, the above query only looks for flow into assignments to password variables.
+   module PasswordFlow = DataFlow::Global<PasswordConfig>;
 
-This is a particular instance of a general pattern, whereby we want to specify a data flow or taint analysis in terms of its *sources* (where flow starts), *sinks* (where it should be tracked), and *barriers* or *sanitizers* (where flow is interrupted). The example does not include any sanitizers, but they are very common in security analyses: for example, an analysis that tracks the flow of untrusted user input into, say, a SQL query has to keep track of code that validates the input, thereby making it safe to use. Such a validation step is an example of a sanitizer.
-
-The classes ``DataFlow::Configuration`` and ``TaintTracking::Configuration`` allow specifying a data flow or taint analysis, respectively, by overriding the following predicates:
-
--  ``isSource(DataFlow::Node nd)`` selects all nodes ``nd`` from where flow tracking starts.
--  ``isSink(DataFlow::Node nd)`` selects all nodes ``nd`` to which the flow is tracked.
--  ``isBarrier(DataFlow::Node nd)`` selects all nodes ``nd`` that act as a barrier for data flow; ``isSanitizer`` is the corresponding predicate for taint tracking configurations.
--  ``isBarrierEdge(DataFlow::Node src, DataFlow::Node trg)`` is a variant of ``isBarrier(nd)`` that allows specifying barrier *edges* in addition to barrier nodes; again, ``isSanitizerEdge`` is the corresponding predicate for taint tracking;
--  ``isAdditionalFlowStep(DataFlow::Node src, DataFlow::Node trg)`` allows specifying custom additional flow steps for this analysis; ``isAdditionalTaintStep`` is the corresponding predicate for taint tracking configurations.
-
-Since for technical reasons both ``Configuration`` classes are subtypes of ``string``, you have to choose a unique name for each flow configuration and equate ``this`` with it in the characteristic predicate (as in the example below).
-
-The predicate ``Configuration.hasFlow`` performs the actual flow tracking, starting at a source and looking for flow to a sink that does not pass through a barrier node or edge.
-
-To continue with our above example, we can phrase it as a data flow configuration as follows:
+Now we can rephrase our query to use ``PasswordFlow::flow``:
 
 .. code-block:: ql
 
-   class PasswordTracker extends DataFlow::Configuration {
-       PasswordTracker() {
-           // unique identifier for this configuration
-           this = "PasswordTracker"
-       }
-
-       override predicate isSource(DataFlow::Node nd) {
-           nd.asExpr() instanceof StringLiteral
-       }
-
-       override predicate isSink(DataFlow::Node nd) {
-           passwordVarAssign(_, nd)
-       }
-
-       predicate passwordVarAssign(Variable v, DataFlow::Node nd) {
-           exists (SsaExplicitDefinition def |
-               nd = DataFlow::ssaDefinitionNode(def) and
-               def.getSourceVariable() = v and
-               v.getName().toLowerCase() = "password"
-           )
-       }
-   }
-
-Now we can rephrase our query to use ``Configuration.hasFlow``:
-
-.. code-block:: ql
-
-   from PasswordTracker pt, DataFlow::Node source, DataFlow::Node sink, Variable v
-   where pt.hasFlow(source, sink) and pt.passwordVarAssign(v, sink)
+   from DataFlow::Node source, DataFlow::Node sink, Variable v
+   where PasswordFlow::flow(_, sink) and passwordVarAssign(v, sink)
    select sink, "Password variable " + v + " is assigned a constant string."
-
-Note that while analyses implemented in this way are inter-procedural in that they track flow and taint across function calls and returns, flow through global variables is not tracked. Flow through object properties is only tracked in limited cases, for example through properties of object literals or CommonJS ``module`` and ``exports`` objects.
 
 Syntax errors
 ~~~~~~~~~~~~~
@@ -810,7 +760,7 @@ The ``semmle.javascript.frameworks.AngularJS`` library provides support for work
 HTTP framework libraries
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-The library ``semmle.javacript.frameworks.HTTP`` provides classes modeling common concepts from various HTTP frameworks. 
+The library ``semmle.javacript.frameworks.HTTP`` provides classes modeling common concepts from various HTTP frameworks.
 
 Currently supported frameworks are `Express <https://expressjs.com/>`__, the standard Node.js ``http`` and ``https`` modules, `Connect <https://github.com/senchalabs/connect>`__, `Koa <https://koajs.com>`__, `Hapi <https://hapi.dev/>`__ and `Restify <http://restify.com/>`__.
 
@@ -843,7 +793,7 @@ As an example of the use of these classes, here is a query that counts for every
    from NodeModule m
    select m, count(m.getAnImportedModule())
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/659662207/>`__. When you analyze a project, for each module you can see how many other modules it imports.
+When you analyze a project, for each module you can see how many other modules it imports.
 
 NPM
 ^^^
@@ -872,8 +822,6 @@ As an example of the use of these classes, here is a query that identifies unuse
    not exists (Require req | req.getTopLevel() = pkg.getAModule() | name = req.getImportedPath().getValue())
    select deps, "Unused dependency '" + name + "'."
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/666680077/>`__. It is not uncommon for projects to have some unused dependencies.
-
 React
 ^^^^^
 
@@ -898,8 +846,6 @@ For example, here is a query to find SQL queries that use string concatenation (
    from SQL::SqlString ss
    where ss instanceof AddExpr
    select ss, "Use templating instead of string concatenation."
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/1506076336224/>`__, showing two (benign) results on `strong-arc <https://lgtm.com/projects/g/strongloop/strong-arc/>`__.
 
 Miscellaneous
 ~~~~~~~~~~~~~
@@ -964,8 +910,6 @@ As an example, here is a query that finds ``@param`` tags that do not specify th
    where t.getTitle() = "param" and
    not exists(t.getName())
    select t, "@param tag is missing name."
-
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/673060054/>`__. Of the LGTM.com demo projects analyzed, only *Semantic-Org/Semantic-UI* has an example where the ``@param`` tag omits the name.
 
 For full details on these and other classes representing JSDoc comments and type expressions, see `the API documentation <https://codeql.github.com/codeql-standard-libraries/javascript/semmle/javascript/JSDoc.qll/module.JSDoc.html>`__.
 

@@ -57,6 +57,8 @@ private predicate candidateMethod(RefType t, Method m, string name, int numParam
   m.getNumberOfParameters() = numParam and
   m = m.getSourceDeclaration() and
   not m.getAnAnnotation() instanceof DeprecatedAnnotation and
+  // Exclude compiler generated methods, such as Kotlin `$default` methods:
+  not m.isCompilerGenerated() and
   not whitelist(name)
 }
 
@@ -113,13 +115,13 @@ private predicate confusinglyOverloaded(Method m, Method n) {
   not exists(Method target | delegate*(m, target) and delegate*(n, target))
 }
 
-private predicate wrappedAccess(Expr e, MethodAccess ma) {
+private predicate wrappedAccess(Expr e, MethodCall ma) {
   e = ma or
   wrappedAccess(e.(CastingExpr).getExpr(), ma)
 }
 
 private predicate delegate(Method caller, Method callee) {
-  exists(MethodAccess ma | ma.getMethod() = callee |
+  exists(MethodCall ma | ma.getMethod() = callee |
     exists(Stmt stmt | stmt = caller.getBody().(SingletonBlock).getStmt() |
       wrappedAccess(stmt.(ExprStmt).getExpr(), ma) or
       wrappedAccess(stmt.(ReturnStmt).getResult(), ma)

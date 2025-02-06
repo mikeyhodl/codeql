@@ -77,6 +77,18 @@ private AstNode alive() {
   or
   // recursive cases
   result = aliveStep(alive())
+  or
+  // cached predicates inside a cached module, because they can group cached predicate.
+  // this is deliberately not part of `aliveStep`, as it only means the predicate is live, but not if it's queryable.
+  exists(Module mod, ClasslessPredicate pred | pred = alive() |
+    not pred.isPrivate() and
+    not result.(ClasslessPredicate).isPrivate() and
+    pred.hasAnnotation("cached") and
+    result.hasAnnotation("cached") and
+    pred.getParent() = mod and
+    result.getParent() = mod and
+    mod.hasAnnotation("cached")
+  )
 }
 
 private AstNode aliveStep(AstNode prev) {
@@ -172,6 +184,18 @@ private AstNode aliveStep(AstNode prev) {
   or
   // the implements of a module
   result = prev.(Module).getImplements(_)
+  or
+  result = prev.(PredicateExpr).getQualifier()
+  or
+  // a module argument is live if the constructed module is
+  result = prev.(ModuleExpr).getArgument(_)
+  or
+  // a type declaration is live if a reference to it is live
+  result = prev.(TypeExpr).getResolvedType().getDeclaration()
+  or
+  // a module member that implements a signature member is live if the module is
+  prev.(Module).getAMember() = result and
+  result.(Declaration).implements(_)
 }
 
 private AstNode deprecated() {

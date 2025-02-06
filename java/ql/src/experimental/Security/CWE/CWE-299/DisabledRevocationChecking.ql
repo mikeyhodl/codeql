@@ -1,5 +1,5 @@
 /**
- * @name Disabled ceritificate revocation checking
+ * @name Disabled certificate revocation checking
  * @description Using revoked certificates is dangerous.
  *              Therefore, revocation status of certificates in a chain should be checked.
  * @kind path-problem
@@ -7,13 +7,19 @@
  * @precision high
  * @id java/disabled-certificate-revocation-checking
  * @tags security
+ *       experimental
  *       external/cwe/cwe-299
  */
 
 import java
-import RevocationCheckingLib
-import DataFlow::PathGraph
+deprecated import RevocationCheckingLib
+deprecated import DisabledRevocationCheckingFlow::PathGraph
 
-from DataFlow::PathNode source, DataFlow::PathNode sink, DisabledRevocationCheckingConfig config
-where config.hasFlowPath(source, sink)
-select source.getNode(), source, sink, "This disables revocation checking."
+deprecated query predicate problems(
+  DataFlow::Node sourceNode, DisabledRevocationCheckingFlow::PathNode source,
+  DisabledRevocationCheckingFlow::PathNode sink, string message
+) {
+  DisabledRevocationCheckingFlow::flowPath(source, sink) and
+  sourceNode = source.getNode() and
+  message = "This disables revocation checking."
+}

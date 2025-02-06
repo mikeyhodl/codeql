@@ -10,6 +10,7 @@ private string getIsAsync(ForeachStmt f) {
 
 from ForeachStmt f
 select f, f.getElementType().toString(), getIsAsync(f),
-  f.getGetEnumerator().getDeclaringType().getQualifiedName(), getLocation(f.getGetEnumerator()),
-  f.getCurrent().getDeclaringType().getQualifiedName(), getLocation(f.getCurrent()),
-  f.getMoveNext().getDeclaringType().getQualifiedName(), getLocation(f.getMoveNext())
+  f.getGetEnumerator().getDeclaringType().getFullyQualifiedNameDebug(),
+  getLocation(f.getGetEnumerator()), f.getCurrent().getDeclaringType().getFullyQualifiedNameDebug(),
+  getLocation(f.getCurrent()), f.getMoveNext().getDeclaringType().getFullyQualifiedNameDebug(),
+  getLocation(f.getMoveNext())

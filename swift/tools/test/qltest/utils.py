@@ -60,9 +60,9 @@ def assert_extractor_executed_with(*flags):
         for actual, expected in itertools.zip_longest(execution, flags):
             if actual:
                 actual = actual.strip()
-                expected_prefix = f"-sdk {swift_root}/qltest/{platform}/sdk -c -primary-file "
-                assert actual.startswith(expected_prefix), f"correct sdk option not found in\n{actual}"
+                expected_prefix = f"-resource-dir {swift_root}/resource-dir/{platform} -c -primary-file "
+                assert actual.startswith(expected_prefix), f"correct options not found in\n{actual}"
                 actual = actual[len(expected_prefix):]
             assert actual, f"\nnot encountered: {expected}"
             assert expected, f"\nunexpected: {actual}"
-            assert actual == expected, f"\nexpecting: {actual}\ngot:       {expected}"
+            assert actual == expected, f"\nexpecting: {expected}\ngot:       {actual}"

@@ -12,6 +12,8 @@ This article describes how data flow analysis is implemented in the CodeQL libra
 The following sections describe how to use the libraries for local data flow, global data flow, and taint tracking.
 For a more general introduction to modeling data flow, see ":ref:`About data flow analysis <about-data-flow-analysis>`."
 
+.. include:: ../reusables/new-data-flow-api.rst
+
 Local data flow
 ---------------
 
@@ -60,8 +62,7 @@ Local taint tracking extends local data flow by including non-value-preserving f
 
 .. code-block:: python
 
-     temp = x
-     y = temp + ", " + temp
+     y = "Hello " + x
 
 If ``x`` is a tainted string then ``y`` is also tainted.
 
@@ -97,11 +98,9 @@ Python has builtin functionality for reading and writing files, such as the func
       call = API::moduleImport("os").getMember("open").getACall()
     select call.getArg(0)
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/8635258505893505141/>`__. Two of the demo projects make use of this low-level API.
-
 Notice the use of the ``API`` module for referring to library functions. For more information, see ":doc:`Using API graphs in Python <using-api-graphs-in-python>`."
 
-Unfortunately this will only give the expression in the argument, not the values which could be passed to it. So we use local data flow to find all expressions that flow into the argument:
+Unfortunately this query will only give the expression in the argument, not the values which could be passed to it. So we use local data flow to find all expressions that flow into the argument:
 
 .. code-block:: ql
 
@@ -115,9 +114,7 @@ Unfortunately this will only give the expression in the argument, not the values
       DataFlow::localFlow(expr, call.getArg(0))
     select call, expr
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/8213643003890447109/>`__. Many expressions flow to the same call.
-
-We see that we get several data-flow nodes for an expression as it flows towards a call (notice repeated locations in the ``call`` column). We are mostly interested in the "first" of these, what might be called the local source for the file name. To restrict attention to such local sources, and to simultaneously make the analysis more performant, we have the QL class ``LocalSourceNode``. We could demand that ``expr`` is such a node:
+Typically, you will see several data-flow nodes for an expression as it flows towards a call (notice repeated locations in the ``call`` column). We are mostly interested in the "first" of these, what might be called the local source for the file name. To restrict attention to such local sources, and to simultaneously make the analysis more performant, we have the QL class ``LocalSourceNode``. We could demand that ``expr`` is such a node:
 
 .. code-block:: ql
 
@@ -160,9 +157,9 @@ As an alternative, we can ask more directly that ``expr`` is a local source of t
       expr = call.getArg(0).getALocalSource()
     select call, expr
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/6602079735954016687/>`__. All these three queries give identical results. We now mostly have one expression per call.
+These three queries all give identical results. We now mostly have one expression per call.
 
-We still have some cases of more than one expression flowing to a call, but then they flow through different code paths (possibly due to control-flow splitting, as in the second case).
+We still have some cases of more than one expression flowing to a call, but then they flow through different code paths (possibly due to control-flow splitting).
 
 We might want to make the source more specific, for example a parameter to a function or method. This query finds instances where a parameter is used as the name when opening a file:
 
@@ -178,7 +175,7 @@ We might want to make the source more specific, for example a parameter to a fun
       DataFlow::localFlow(p, call.getArg(0))
     select call, p
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/3998032643497238063/>`__. Very few results now; these could feasibly be inspected manually.
+For most codebases, this will return only a few results and these could be inspected manually.
 
 Using the exact name supplied via the parameter may be too strict. If we want to know if the parameter influences the file name, we can use taint tracking instead of data flow. This query finds calls to ``os.open`` where the filename is derived from a parameter:
 
@@ -194,7 +191,7 @@ Using the exact name supplied via the parameter may be too strict. If we want to
       TaintTracking::localTaint(p, call.getArg(0))
     select call, p
 
-➤ `See this in the query console on LGTM.com <https://lgtm.com/query/2129957933670836953/>`__. Now we get more results and in more projects.
+Typically, this finds more results.
 
 Global data flow
 ----------------
@@ -208,70 +205,61 @@ Global data flow tracks data flow throughout the entire program, and is therefor
 Using global data flow
 ~~~~~~~~~~~~~~~~~~~~~~
 
-The global data flow library is used by extending the class ``DataFlow::Configuration``:
+We can use the global data flow library by implementing the signature ``DataFlow::ConfigSig`` and applying the module ``DataFlow::Global<ConfigSig>``:
 
 .. code-block:: ql
 
    import python
 
-   class MyDataFlowConfiguration extends DataFlow::Configuration {
-     MyDataFlowConfiguration() { this = "..." }
-
-     override predicate isSource(DataFlow::Node source) {
+   module MyFlowConfiguration implements DataFlow::ConfigSig {
+     predicate isSource(DataFlow::Node source) {
        ...
      }
 
-     override predicate isSink(DataFlow::Node sink) {
+     predicate isSink(DataFlow::Node sink) {
        ...
      }
    }
+
+   module MyFlow = DataFlow::Global<MyFlowConfiguration>;
 
 These predicates are defined in the configuration:
 
 -  ``isSource`` - defines where data may flow from.
 -  ``isSink`` - defines where data may flow to.
--  ``isBarrier`` - optionally, restricts the data flow.
--  ``isAdditionalFlowStep`` - optionally, adds additional flow steps.
+-  ``isBarrier`` - optional, defines where data flow is blocked.
+-  ``isAdditionalFlowStep`` - optional, adds additional flow steps.
 
-The characteristic predicate (``MyDataFlowConfiguration()``) defines the name of the configuration, so ``"..."`` must be replaced with a unique name (for instance the class name).
-
-The data flow analysis is performed using the predicate ``hasFlow(DataFlow::Node source, DataFlow::Node sink)``:
+The data flow analysis is performed using the predicate ``flow(DataFlow::Node source, DataFlow::Node sink)``:
 
 .. code-block:: ql
 
-   from MyDataFlowConfiguation dataflow, DataFlow::Node source, DataFlow::Node sink
-   where dataflow.hasFlow(source, sink)
+   from DataFlow::Node source, DataFlow::Node sink
+   where MyFlow::flow(source, sink)
    select source, "Dataflow to $@.", sink, sink.toString()
 
 Using global taint tracking
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Global taint tracking is to global data flow what local taint tracking is to local data flow. That is, global taint tracking extends global data flow with additional non-value-preserving steps. The global taint tracking library is used by extending the class ``TaintTracking::Configuration``:
+Global taint tracking is to global data flow what local taint tracking is to local data flow. That is, global taint tracking extends global data flow with additional non-value-preserving steps. The global taint tracking library is used by applying the module ``TaintTracking::Global<ConfigSig>`` to your configuration instead of ``DataFlow::Global<ConfigSig>``:
 
 .. code-block:: ql
 
    import python
 
-   class MyTaintTrackingConfiguration extends TaintTracking::Configuration {
-     MyTaintTrackingConfiguration() { this = "..." }
-
-     override predicate isSource(DataFlow::Node source) {
+   module MyFlowConfiguration implements DataFlow::ConfigSig {
+     predicate isSource(DataFlow::Node source) {
        ...
      }
 
-     override predicate isSink(DataFlow::Node sink) {
+     predicate isSink(DataFlow::Node sink) {
        ...
      }
    }
 
-These predicates are defined in the configuration:
+   module MyFlow = TaintTracking::Global<MyFlowConfiguration>;
 
--  ``isSource`` - defines where taint may flow from.
--  ``isSink`` - defines where taint may flow to.
--  ``isSanitizer`` - optionally, restricts the taint flow.
--  ``isAdditionalTaintStep`` - optionally, adds additional taint steps.
-
-Similar to global data flow, the characteristic predicate (``MyTaintTrackingConfiguration()``) defines the unique name of the configuration and the taint analysis is performed using the predicate ``hasFlow(DataFlow::Node source, DataFlow::Node sink)``.
+The resulting module has an identical signature to the one obtained from ``DataFlow::Global<ConfigSig>``.
 
 Predefined sources and sinks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -287,7 +275,6 @@ For global flow, it is also useful to restrict sources to instances of ``LocalSo
 Class hierarchy
 ~~~~~~~~~~~~~~~
 
--  ``DataFlow::Configuration`` - base class for custom global data flow analysis.
 -  ``DataFlow::Node`` - an element behaving as a data flow node.
 
     -  ``DataFlow::CfgNode`` - a control-flow node behaving as a data flow node.
@@ -309,8 +296,6 @@ Class hierarchy
     -  ``Concepts::HTTP::Server::RouteSetup`` - a data-flow node that sets up a route on a server.
     -  ``Concepts::HTTP::Server::HttpResponse`` - a data-flow node that creates a HTTP response on a server.
 
--  ``TaintTracking::Configuration`` - base class for custom global taint tracking analysis.
-
 Examples
 ~~~~~~~~
 
@@ -324,20 +309,20 @@ This query shows a data flow configuration that uses all network input as data s
     import semmle.python.dataflow.new.RemoteFlowSources
     import semmle.python.Concepts
 
-    class RemoteToFileConfiguration extends TaintTracking::Configuration {
-      RemoteToFileConfiguration() { this = "RemoteToFileConfiguration" }
-
-      override predicate isSource(DataFlow::Node source) {
+    module RemoteToFileConfiguration implements DataFlow::ConfigSig {
+      predicate isSource(DataFlow::Node source) {
         source instanceof RemoteFlowSource
       }
 
-      override predicate isSink(DataFlow::Node sink) {
+      predicate isSink(DataFlow::Node sink) {
         sink = any(FileSystemAccess fa).getAPathArgument()
       }
     }
 
-    from DataFlow::Node input, DataFlow::Node fileAccess, RemoteToFileConfiguration config
-    where config.hasFlow(input, fileAccess)
+    module RemoteToFileFlow = TaintTracking::Global<RemoteToFileConfiguration>;
+
+    from DataFlow::Node input, DataFlow::Node fileAccess
+    where RemoteToFileFlow::flow(input, fileAccess)
     select fileAccess, "This file access uses data from $@.",
       input, "user-controllable input."
 
@@ -349,14 +334,12 @@ This data flow configuration tracks data flow from environment variables to open
     import semmle.python.dataflow.new.TaintTracking
     import semmle.python.ApiGraphs
 
-    class EnvironmentToFileConfiguration extends DataFlow::Configuration {
-      EnvironmentToFileConfiguration() { this = "EnvironmentToFileConfiguration" }
-
-      override predicate isSource(DataFlow::Node source) {
+    module EnvironmentToFileConfiguration implements DataFlow::ConfigSig {
+      predicate isSource(DataFlow::Node source) {
         source = API::moduleImport("os").getMember("getenv").getACall()
       }
 
-      override predicate isSink(DataFlow::Node sink) {
+      predicate isSink(DataFlow::Node sink) {
         exists(DataFlow::CallCfgNode call |
           call = API::moduleImport("os").getMember("open").getACall() and
           sink = call.getArg(0)
@@ -364,18 +347,18 @@ This data flow configuration tracks data flow from environment variables to open
       }
     }
 
-    from Expr environment, Expr fileOpen, EnvironmentToFileConfiguration config
-    where config.hasFlow(DataFlow::exprNode(environment), DataFlow::exprNode(fileOpen))
+    module EnvironmentToFileFlow = DataFlow::Global<EnvironmentToFileConfiguration>;
+
+    from Expr environment, Expr fileOpen
+    where EnvironmentToFileFlow::flow(DataFlow::exprNode(environment), DataFlow::exprNode(fileOpen))
     select fileOpen, "This call to 'os.open' uses data from $@.",
       environment, "call to 'os.getenv'"
-
-➤ `Running this in the query console on LGTM.com <https://lgtm.com/query/6582374907796191895/>`__ unsurprisingly yields no results in the demo projects.
 
 
 Further reading
 ---------------
 
-- ":ref:`Exploring data flow with path queries <exploring-data-flow-with-path-queries>`"
+- `Exploring data flow with path queries  <https://docs.github.com/en/code-security/codeql-for-vs-code/getting-started-with-codeql-for-vs-code/exploring-data-flow-with-path-queries>`__ in the GitHub documentation.
 
 
 .. include:: ../reusables/python-further-reading.rst

@@ -7,12 +7,17 @@
 
 import java
 
+/** Holds if `id` is a valid Java identifier. */
+bindingset[id]
+private predicate isValidIdentifier(string id) { id.regexpMatch("[\\w_$]+") }
+
 /** A type that should be in the generated code. */
 abstract private class GeneratedType extends ClassOrInterface {
   GeneratedType() {
     not this instanceof AnonymousClass and
     not this.isLocal() and
-    not this.getPackage() instanceof ExcludedPackage
+    not this.getPackage() instanceof ExcludedPackage and
+    isValidIdentifier(this.getName())
   }
 
   private string stubKeyword() {
@@ -108,7 +113,8 @@ abstract private class GeneratedType extends ClassOrInterface {
     not result.isPrivate() and
     not result.isPackageProtected() and
     not result instanceof StaticInitializer and
-    not result instanceof InstanceInitializer
+    not result instanceof InstanceInitializer and
+    isValidIdentifier(result.getName())
   }
 
   final Type getAGeneratedType() {
@@ -273,7 +279,32 @@ private string stubQualifier(RefType t) {
     exists(RefType et | et = t.(NestedType).getEnclosingType().getSourceDeclaration() |
       result = stubQualifier(et) + et.getName() + "."
     )
-  else result = ""
+  else
+    if needsPackageName(t)
+    then result = t.getPackage().getName() + "."
+    else result = ""
+}
+
+pragma[nomagic]
+private predicate needsPackageNameHelper(RefType t, GeneratedTopLevel top, string name) {
+  t.getSourceDeclaration() =
+    pragma[only_bind_out]([getAReferencedType(top), top].getSourceDeclaration()) and
+  name = t.getName()
+}
+
+pragma[nomagic]
+private predicate describesMultipleTypes(GeneratedTopLevel top, string name) {
+  2 <= strictcount(RefType t | needsPackageNameHelper(t, top, name))
+}
+
+/**
+ * Holds if `t` may clash with another type of the same name, so should be referred to using the fully qualified name
+ */
+private predicate needsPackageName(RefType t) {
+  exists(GeneratedTopLevel top, string name |
+    needsPackageNameHelper(t, top, name) and
+    describesMultipleTypes(top, name)
+  )
 }
 
 language[monotonicAggregates]
@@ -493,20 +524,17 @@ private RefType getAReferencedType(RefType t) {
 }
 
 /** A top level type whose file should be stubbed */
-class GeneratedTopLevel extends TopLevelType {
-  GeneratedTopLevel() {
-    this = this.getSourceDeclaration() and
-    this instanceof GeneratedType
-  }
+class GeneratedTopLevel extends TopLevelType instanceof GeneratedType {
+  GeneratedTopLevel() { this = this.(ClassOrInterface).getSourceDeclaration() }
 
   private TopLevelType getAnImportedType() {
-    result = getAReferencedType(this).getSourceDeclaration()
+    result = getAReferencedType(this).getSourceDeclaration() and
+    not needsPackageName(result) // use the fully qualified name rather than importing it if it may cause name clashes
   }
 
   private string stubAnImport() {
-    exists(RefType t, string pkg, string name |
+    exists(ClassOrInterface t, string pkg, string name |
       t = this.getAnImportedType() and
-      (t instanceof Class or t instanceof Interface) and
       t.hasQualifiedName(pkg, name) and
       t != this and
       pkg != "java.lang"
@@ -530,8 +558,6 @@ class GeneratedTopLevel extends TopLevelType {
 
   /** Creates a full stub for the file containing this type. */
   string stubFile() {
-    result =
-      this.stubComment() + this.stubPackage() + this.stubImports() + this.(GeneratedType).getStub() +
-        "\n"
+    result = this.stubComment() + this.stubPackage() + this.stubImports() + super.getStub() + "\n"
   }
 }

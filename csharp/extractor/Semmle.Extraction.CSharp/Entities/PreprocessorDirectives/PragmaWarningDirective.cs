@@ -1,7 +1,8 @@
+using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.IO;
+using Semmle.Util;
 
 namespace Semmle.Extraction.CSharp.Entities
 {
@@ -15,12 +16,7 @@ namespace Semmle.Extraction.CSharp.Entities
         protected override void PopulatePreprocessor(TextWriter trapFile)
         {
             trapFile.pragma_warnings(this, Symbol.DisableOrRestoreKeyword.IsKind(SyntaxKind.DisableKeyword) ? 0 : 1);
-
-            var childIndex = 0;
-            foreach (var code in Symbol.ErrorCodes)
-            {
-                trapFile.pragma_warning_error_codes(this, code.ToString(), childIndex++);
-            }
+            Symbol.ErrorCodes.ForEach((code, child) => trapFile.pragma_warning_error_codes(this, code.ToString(), child));
         }
 
         public static PragmaWarningDirective Create(Context cx, PragmaWarningDirectiveTriviaSyntax p) =>

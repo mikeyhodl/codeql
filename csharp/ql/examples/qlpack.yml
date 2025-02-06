@@ -3,4 +3,5 @@ groups:
   - csharp
   - examples
 dependencies:
-  codeql/csharp-all: "*"
+  codeql/csharp-all: ${workspace}
+warnOnImplicitThis: true

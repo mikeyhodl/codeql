@@ -19,14 +19,18 @@ module Kernel {
    */
   class KernelMethodCall extends DataFlow::CallNode {
     KernelMethodCall() {
-      this = API::getTopLevelMember("Kernel").getAMethodCall(_)
+      // Match Kernel calls using local flow, to avoid finding singleton calls on subclasses
+      this = DataFlow::getConstant("Kernel").getAMethodCall(_)
       or
       this.asExpr().getExpr() instanceof UnknownMethodCall and
       (
         this.getReceiver().asExpr().getExpr() instanceof SelfVariableAccess and
-        isPrivateKernelMethod(this.getMethodName())
+        isPrivateKernelMethod(super.getMethodName())
         or
-        isPublicKernelMethod(this.getMethodName())
+        this.asExpr().getExpr() instanceof SuperCall and
+        isPrivateKernelMethod(super.getMethodName())
+        or
+        isPublicKernelMethod(super.getMethodName())
       )
     }
   }
@@ -39,7 +43,10 @@ module Kernel {
    * ```
    */
   private predicate isPublicKernelMethod(string method) {
-    method in ["class", "clone", "frozen?", "tap", "then", "yield_self", "send"]
+    method in [
+        "class", "clone", "frozen?", "tap", "then", "yield_self", "send", "public_send", "__send__",
+        "method", "public_method", "singleton_method"
+      ]
   }
 
   /**
@@ -92,14 +99,14 @@ module Kernel {
    * ```
    * Ruby documentation: https://docs.ruby-lang.org/en/3.0.0/Kernel.html#method-i-system
    */
-  class KernelSystemCall extends SystemCommandExecution::Range, KernelMethodCall {
+  class KernelSystemCall extends SystemCommandExecution::Range instanceof KernelMethodCall {
     KernelSystemCall() { this.getMethodName() = "system" }
 
-    override DataFlow::Node getAnArgument() { result = this.getArgument(_) }
+    override DataFlow::Node getAnArgument() { result = super.getArgument(_) }
 
     override predicate isShellInterpreted(DataFlow::Node arg) {
       // Kernel.system invokes a subshell if you provide a single string as argument
-      this.getNumberOfArguments() = 1 and arg = this.getAnArgument()
+      super.getNumberOfArguments() = 1 and arg = this.getAnArgument()
     }
   }
 
@@ -108,14 +115,14 @@ module Kernel {
    * `Kernel.exec` takes the same argument forms as `Kernel.system`. See `KernelSystemCall` for details.
    * Ruby documentation: https://docs.ruby-lang.org/en/3.0.0/Kernel.html#method-i-exec
    */
-  class KernelExecCall extends SystemCommandExecution::Range, KernelMethodCall {
+  class KernelExecCall extends SystemCommandExecution::Range instanceof KernelMethodCall {
     KernelExecCall() { this.getMethodName() = "exec" }
 
-    override DataFlow::Node getAnArgument() { result = this.getArgument(_) }
+    override DataFlow::Node getAnArgument() { result = super.getArgument(_) }
 
     override predicate isShellInterpreted(DataFlow::Node arg) {
       // Kernel.exec invokes a subshell if you provide a single string as argument
-      this.getNumberOfArguments() = 1 and arg = this.getAnArgument()
+      super.getNumberOfArguments() = 1 and arg = this.getAnArgument()
     }
   }
 
@@ -129,14 +136,14 @@ module Kernel {
    * spawn([env,] command... [,options]) -> pid
    * ```
    */
-  class KernelSpawnCall extends SystemCommandExecution::Range, KernelMethodCall {
+  class KernelSpawnCall extends SystemCommandExecution::Range instanceof KernelMethodCall {
     KernelSpawnCall() { this.getMethodName() = "spawn" }
 
-    override DataFlow::Node getAnArgument() { result = this.getArgument(_) }
+    override DataFlow::Node getAnArgument() { result = super.getArgument(_) }
 
     override predicate isShellInterpreted(DataFlow::Node arg) {
       // Kernel.spawn invokes a subshell if you provide a single string as argument
-      this.getNumberOfArguments() = 1 and arg = this.getAnArgument()
+      super.getNumberOfArguments() = 1 and arg = this.getAnArgument()
     }
   }
 
@@ -163,7 +170,25 @@ module Kernel {
    * ```
    */
   class SendCallCodeExecution extends CodeExecution::Range, KernelMethodCall {
-    SendCallCodeExecution() { this.getMethodName() = "send" }
+    SendCallCodeExecution() { this.getMethodName() = ["send", "public_send", "__send__"] }
+
+    override DataFlow::Node getCode() { result = this.getArgument(0) }
+
+    override predicate runsArbitraryCode() { none() }
+  }
+
+  /**
+   * A call to `method`, `public_method` or `singleton_method` which returns a method object.
+   * To actually execute the method, the `call` method needs to be called on the object.
+   * ```ruby
+   * m = method("exit")
+   * m.call()
+   * ```
+   */
+  class MethodCallCodeExecution extends CodeExecution::Range, KernelMethodCall {
+    MethodCallCodeExecution() {
+      this.getMethodName() = ["method", "public_method", "singleton_method"]
+    }
 
     override DataFlow::Node getCode() { result = this.getArgument(0) }
 
@@ -173,9 +198,58 @@ module Kernel {
   private class TapSummary extends SimpleSummarizedCallable {
     TapSummary() { this = "tap" }
 
-    override predicate propagatesFlowExt(string input, string output, boolean preservesValue) {
+    override predicate propagatesFlow(string input, string output, boolean preservesValue) {
       input = "Argument[self]" and
       output = ["ReturnValue", "Argument[block].Parameter[0]"] and
+      preservesValue = true
+    }
+  }
+
+  /** A call to e.g. `Kernel.load` that accesses a file. */
+  private class KernelFileAccess extends FileSystemAccess::Range instanceof KernelMethodCall {
+    KernelFileAccess() {
+      super.getMethodName() = ["load", "require", "require_relative", "autoload", "autoload?"]
+    }
+
+    override DataFlow::Node getAPathArgument() {
+      result = super.getArgument(0) and
+      super.getMethodName() = ["load", "require", "require_relative"]
+      or
+      result = super.getArgument(1) and
+      super.getMethodName() = ["autoload", "autoload?"]
+    }
+  }
+
+  private import codeql.ruby.ast.internal.Module as Module
+
+  /**
+   * A call to `Array()`, that converts it's singular argument to an array.
+   * This summary is based on https://ruby-doc.org/3.2.1/Kernel.html#method-i-Array
+   */
+  private class KernelArraySummary extends SummarizedCallable {
+    KernelArraySummary() { this = "Array()" }
+
+    override MethodCall getACallSimple() {
+      result.getMethodName() = "Array" and
+      // I have to have a simplified "KernelMethodCall" implementation inlined here, because relying on `UnknownMethodCall` results in non-monotonic recursion (even if using `getACall`).
+      (
+        // similar to `getAStaticArrayCall` from Array.qll
+        Module::resolveConstantReadAccess(result.getReceiver()) = Module::TResolved("Kernel")
+        or
+        result.getReceiver() instanceof SelfVariableAccess
+      )
+    }
+
+    override predicate propagatesFlow(string input, string output, boolean preservesValue) {
+      (
+        // already an array
+        input = "Argument[0].WithElement[0..]" and
+        output = "ReturnValue"
+        or
+        // not already an array
+        input = "Argument[0].WithoutElement[0..]" and
+        output = "ReturnValue.Element[0]"
+      ) and
       preservesValue = true
     }
   }

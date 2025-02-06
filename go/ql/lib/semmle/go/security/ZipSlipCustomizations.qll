@@ -28,13 +28,6 @@ module ZipSlip {
   abstract class Sanitizer extends DataFlow::Node { }
 
   /**
-   * DEPRECATED: Use `Sanitizer` instead.
-   *
-   * A sanitizer guard for zip-slip vulnerabilities.
-   */
-  abstract deprecated class SanitizerGuard extends DataFlow::BarrierGuard { }
-
-  /**
    * A tar file header, as a source for zip slip.
    */
   class TarHeaderSource extends Source, DataFlow::Node {
@@ -61,7 +54,7 @@ module ZipSlip {
   }
 
   /**
-   * Excludes zipped file data from consideration for zip slip.
+   * A zipped file, excluded from for zip slip.
    */
   class ZipFileOpen extends Sanitizer {
     ZipFileOpen() {
@@ -73,9 +66,8 @@ module ZipSlip {
   }
 
   /** A path-traversal sink, considered as a taint sink for zip slip. */
-  class TaintedPathSinkAsSink extends Sink {
+  class TaintedPathSinkAsSink extends Sink instanceof TaintedPath::Sink {
     TaintedPathSinkAsSink() {
-      this instanceof TaintedPath::Sink and
       // Exclude `os.Symlink`, which is treated specifically in query `go/unsafe-unzip-symlink`.
       not exists(DataFlow::CallNode c | c.getTarget().hasQualifiedName("os", "Symlink") |
         this = c.getAnArgument()
@@ -84,9 +76,7 @@ module ZipSlip {
   }
 
   /** A path-traversal sanitizer, considered as a sanitizer for zip slip. */
-  class TaintedPathSanitizerAsSanitizer extends Sanitizer {
-    TaintedPathSanitizerAsSanitizer() { this instanceof TaintedPath::Sanitizer }
-  }
+  class TaintedPathSanitizerAsSanitizer extends Sanitizer instanceof TaintedPath::Sanitizer { }
 
   pragma[noinline]
   private predicate taintedPathGuardChecks(

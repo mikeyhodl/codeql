@@ -25,32 +25,7 @@ class MvelInjectionAdditionalTaintStep extends Unit {
 
 /** Default sink for MVEL injection vulnerabilities. */
 private class DefaultMvelEvaluationSink extends MvelEvaluationSink {
-  DefaultMvelEvaluationSink() { sinkNode(this, "mvel") }
-}
-
-private class DefaulMvelEvaluationSinkModel extends SinkModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "javax.script;CompiledScript;false;eval;;;Argument[-1];mvel;manual",
-        "org.mvel2;MVEL;false;eval;;;Argument[0];mvel;manual",
-        "org.mvel2;MVEL;false;executeExpression;;;Argument[0];mvel;manual",
-        "org.mvel2;MVEL;false;evalToBoolean;;;Argument[0];mvel;manual",
-        "org.mvel2;MVEL;false;evalToString;;;Argument[0];mvel;manual",
-        "org.mvel2;MVEL;false;executeAllExpression;;;Argument[0];mvel;manual",
-        "org.mvel2;MVEL;false;executeSetExpression;;;Argument[0];mvel;manual",
-        "org.mvel2;MVELRuntime;false;execute;;;Argument[1];mvel;manual",
-        "org.mvel2.templates;TemplateRuntime;false;eval;;;Argument[0];mvel;manual",
-        "org.mvel2.templates;TemplateRuntime;false;execute;;;Argument[0];mvel;manual",
-        "org.mvel2.jsr223;MvelScriptEngine;false;eval;;;Argument[0];mvel;manual",
-        "org.mvel2.jsr223;MvelScriptEngine;false;evaluate;;;Argument[0];mvel;manual",
-        "org.mvel2.jsr223;MvelCompiledScript;false;eval;;;Argument[-1];mvel;manual",
-        "org.mvel2.compiler;ExecutableStatement;false;getValue;;;Argument[-1];mvel;manual",
-        "org.mvel2.compiler;CompiledExpression;false;getDirectValue;;;Argument[-1];mvel;manual",
-        "org.mvel2.compiler;CompiledAccExpression;false;getValue;;;Argument[-1];mvel;manual",
-        "org.mvel2.compiler;Accessor;false;getValue;;;Argument[-1];mvel;manual"
-      ]
-  }
+  DefaultMvelEvaluationSink() { sinkNode(this, "mvel-injection") }
 }
 
 /** A default sanitizer that considers numeric and boolean typed data safe for building MVEL expressions */
@@ -79,7 +54,7 @@ private class DefaultMvelInjectionAdditionalTaintStep extends MvelInjectionAddit
  * by callilng `MVEL.compileExpression(tainted)`.
  */
 private predicate expressionCompilationStep(DataFlow::Node node1, DataFlow::Node node2) {
-  exists(StaticMethodAccess ma, Method m | ma.getMethod() = m |
+  exists(StaticMethodCall ma, Method m | ma.getMethod() = m |
     m.getDeclaringType() instanceof MVEL and
     m.hasName("compileExpression") and
     ma.getAnArgument() = node1.asExpr() and
@@ -116,7 +91,7 @@ private predicate createCompiledAccExpressionStep(DataFlow::Node node1, DataFlow
  * by calling `ExpressionCompiler.compile()`.
  */
 private predicate expressionCompilerCompileStep(DataFlow::Node node1, DataFlow::Node node2) {
-  exists(MethodAccess ma, Method m | ma.getMethod() = m |
+  exists(MethodCall ma, Method m | ma.getMethod() = m |
     m.getDeclaringType() instanceof ExpressionCompiler and
     m.hasName("compile") and
     ma = node2.asExpr() and
@@ -129,7 +104,7 @@ private predicate expressionCompilerCompileStep(DataFlow::Node node1, DataFlow::
  * by calling `engine.compile(tainted)` or `engine.compiledScript(tainted)`.
  */
 private predicate scriptCompileStep(DataFlow::Node node1, DataFlow::Node node2) {
-  exists(MethodAccess ma, Method m | ma.getMethod() = m |
+  exists(MethodCall ma, Method m | ma.getMethod() = m |
     m instanceof MvelScriptEngineCompilationMethod and
     ma = node2.asExpr() and
     ma.getArgument(0) = node1.asExpr()
@@ -165,13 +140,13 @@ private predicate createTemplateCompilerStep(DataFlow::Node node1, DataFlow::Nod
  * by calling `compiler.compile()` or `TemplateCompiler.compileTemplate(tainted)`.
  */
 private predicate templateCompileStep(DataFlow::Node node1, DataFlow::Node node2) {
-  exists(MethodAccess ma, Method m | ma.getMethod() = m |
+  exists(MethodCall ma, Method m | ma.getMethod() = m |
     m instanceof TemplateCompilerCompileMethod and
     ma.getQualifier() = node1.asExpr() and
     ma = node2.asExpr()
   )
   or
-  exists(StaticMethodAccess ma, Method m | ma.getMethod() = m |
+  exists(StaticMethodCall ma, Method m | ma.getMethod() = m |
     m instanceof TemplateCompilerCompileTemplateMethod and
     ma = node2.asExpr() and
     ma.getArgument(0) = node1.asExpr()

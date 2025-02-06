@@ -2,8 +2,6 @@
 
 import csharp
 private import semmle.code.csharp.frameworks.System
-private import semmle.code.csharp.dataflow.DataFlow3
-private import semmle.code.csharp.dataflow.ExternalFlow
 
 /** The `System.Xml` namespace. */
 class SystemXmlNamespace extends Namespace {
@@ -40,19 +38,6 @@ class SystemXmlXmlDocumentClass extends Class {
   }
 }
 
-/** Data flow for `System.Xml.XmlDocument`. */
-private class SystemXmlXmlDocumentFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Xml;XmlDocument;false;Load;(System.IO.Stream);;Argument[0];Argument[this];taint;manual",
-        "System.Xml;XmlDocument;false;Load;(System.IO.TextReader);;Argument[0];Argument[this];taint;manual",
-        "System.Xml;XmlDocument;false;Load;(System.String);;Argument[0];Argument[this];taint;manual",
-        "System.Xml;XmlDocument;false;Load;(System.Xml.XmlReader);;Argument[0];Argument[this];taint;manual"
-      ]
-  }
-}
-
 /** The `System.Xml.XmlReader` class. */
 class SystemXmlXmlReaderClass extends Class {
   SystemXmlXmlReaderClass() {
@@ -65,27 +50,6 @@ class SystemXmlXmlReaderClass extends Class {
     result = this.getAMethod() and
     result.hasName("Create") and
     result.isStatic()
-  }
-}
-
-/** Data flow for `System.Xml.XmlReader`. */
-private class SystemXmlXmlReaderFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Xml;XmlReader;false;Create;(System.IO.Stream);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.Stream,System.Xml.XmlReaderSettings);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.Stream,System.Xml.XmlReaderSettings,System.String);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.Stream,System.Xml.XmlReaderSettings,System.Xml.XmlParserContext);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.TextReader);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.TextReader,System.Xml.XmlReaderSettings);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.TextReader,System.Xml.XmlReaderSettings,System.String);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.IO.TextReader,System.Xml.XmlReaderSettings,System.Xml.XmlParserContext);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.String);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.String,System.Xml.XmlReaderSettings);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.String,System.Xml.XmlReaderSettings,System.Xml.XmlParserContext);;Argument[0];ReturnValue;taint;manual",
-        "System.Xml;XmlReader;false;Create;(System.Xml.XmlReader,System.Xml.XmlReaderSettings);;Argument[0];ReturnValue;taint;manual"
-      ]
   }
 }
 
@@ -135,42 +99,6 @@ class SystemXmlXmlNodeClass extends Class {
   }
 }
 
-/** Data flow for `System.Xml.XmlNode`. */
-private class SystemXmlXmlNodeFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Xml;XmlNode;false;GetEnumerator;();;Argument[this].Element;ReturnValue.Property[System.Collections.IEnumerator.Current];value;manual",
-        "System.Xml;XmlNode;false;SelectNodes;(System.String);;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;false;SelectNodes;(System.String,System.Xml.XmlNamespaceManager);;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;false;SelectSingleNode;(System.String);;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;false;SelectSingleNode;(System.String,System.Xml.XmlNamespaceManager);;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_Attributes;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_BaseURI;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_ChildNodes;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_FirstChild;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_HasChildNodes;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_InnerText;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_InnerXml;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_IsReadOnly;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_LastChild;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_LocalName;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_Name;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_NamespaceURI;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_NextSibling;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_NodeType;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_OuterXml;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_OwnerDocument;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_ParentNode;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_Prefix;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_PreviousSibling;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_PreviousText;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_SchemaInfo;();;Argument[this];ReturnValue;taint;manual",
-        "System.Xml;XmlNode;true;get_Value;();;Argument[this];ReturnValue;taint;manual"
-      ]
-  }
-}
-
 /** The `System.Xml.XmlNamedNodeMap` class. */
 class SystemXmlXmlNamedNodeMapClass extends Class {
   SystemXmlXmlNamedNodeMapClass() {
@@ -182,17 +110,6 @@ class SystemXmlXmlNamedNodeMapClass extends Class {
   Method getGetNamedItemMethod() {
     result = this.getAMethod() and
     result.hasName("GetNamedItem")
-  }
-}
-
-/** Data flow for `System.Xml.XmlNamedNodeMap`. */
-private class SystemXmlXmlNamedNodeMapClassFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      [
-        "System.Xml;XmlNamedNodeMap;false;GetNamedItem;(System.String);;Argument[this];ReturnValue;value;manual",
-        "System.Xml;XmlNamedNodeMap;false;GetNamedItem;(System.String,System.String);;Argument[this];ReturnValue;value;manual"
-      ]
   }
 }
 
@@ -218,7 +135,9 @@ private Expr getBitwiseOrOperand(Expr e) { result = e.(BitwiseOrExpr).getAnOpera
 
 /** A creation of an instance of `System.Xml.XmlReaderSettings`. */
 class XmlReaderSettingsCreation extends ObjectCreation {
-  XmlReaderSettingsCreation() { this.getType() instanceof SystemXmlXmlReaderSettingsClass }
+  private SystemXmlXmlReaderSettingsClass settings;
+
+  XmlReaderSettingsCreation() { settings = this.getType() }
 
   /** Gets a value set on the `ValidationType` property, if any. */
   SystemXmlValidationType getValidationType() {
@@ -234,7 +153,7 @@ class XmlReaderSettingsCreation extends ObjectCreation {
 
   /** Gets a value set for the given property in this local context. */
   private Expr getPropertyValue(Property p) {
-    p = this.getType().(RefType).getAProperty() and
+    p = settings.getAProperty() and
     exists(PropertyCall set, Expr arg |
       set.getTarget() = p.getSetter() and
       DataFlow::localExprFlow(this, set.getQualifier()) and
@@ -244,17 +163,13 @@ class XmlReaderSettingsCreation extends ObjectCreation {
   }
 }
 
-private class SettingsDataFlowConfig extends DataFlow3::Configuration {
-  SettingsDataFlowConfig() { this = "SettingsDataFlowConfig" }
+private module SettingsDataFlowConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node source) { source.asExpr() instanceof XmlReaderSettingsCreation }
 
-  override predicate isSource(DataFlow::Node source) {
-    source.asExpr() instanceof XmlReaderSettingsCreation
-  }
-
-  override predicate isSink(DataFlow::Node sink) {
-    sink.asExpr() instanceof XmlReaderSettingsInstance
-  }
+  predicate isSink(DataFlow::Node sink) { sink.asExpr() instanceof XmlReaderSettingsInstance }
 }
+
+private module SettingsDataFlow = DataFlow::Global<SettingsDataFlowConfig>;
 
 /** A call to `XmlReader.Create`. */
 class XmlReaderCreateCall extends MethodCall {
@@ -272,16 +187,6 @@ class XmlReaderSettingsInstance extends Expr {
 
   /** Gets a possible creation point for this instance of `XmlReaderSettings`. */
   XmlReaderSettingsCreation getASettingsCreation() {
-    exists(SettingsDataFlowConfig settingsFlow |
-      settingsFlow.hasFlow(DataFlow::exprNode(result), DataFlow::exprNode(this))
-    )
-  }
-}
-
-/** Data flow for `System.Xml.XmlAttributeCollection`. */
-private class SystemXmlXmlAttributeCollectionFlowModelCsv extends SummaryModelCsv {
-  override predicate row(string row) {
-    row =
-      "System.Xml;XmlAttributeCollection;false;CopyTo;(System.Xml.XmlAttribute[],System.Int32);;Argument[this].Element;Argument[0].Element;value;manual"
+    SettingsDataFlow::flow(DataFlow::exprNode(result), DataFlow::exprNode(this))
   }
 }
